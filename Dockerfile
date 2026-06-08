@@ -40,6 +40,10 @@ RUN apt-get update && apt-get install -y \
 # Create required directories
 RUN mkdir -p /run/php /var/run/mysqld /var/www/vhosts /etc/nginx/sites-enabled /var/log/php8.4-fpm
 
+# Remove default nginx site config and install OPanel default catch-all
+RUN rm -f /etc/nginx/sites-enabled/default
+COPY templates/nginx/default-server.conf /etc/nginx/sites-enabled/00-default.conf
+
 # Set permissions for MariaDB runtime
 RUN chown mysql:mysql /var/run/mysqld
 
@@ -50,7 +54,7 @@ COPY --from=backend-builder /opt/opanel/static /opt/opanel/static
 COPY --from=backend-builder /app/templates /opt/opanel/templates
 COPY config.example.yaml /etc/opanel/config.yaml
 
-EXPOSE 8443
+EXPOSE 80 8443
 
 # Start script that launches all services
 COPY entrypoint.sh /entrypoint.sh

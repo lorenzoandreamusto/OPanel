@@ -450,6 +450,75 @@ Test-Case "Pool removed on domain delete" { $intPoolAfter -match "No such file" 
 Test-Case "Nginx config removed on domain delete" { $intNginxAfter -match "No such file" }
 
 # ============================================================
+Write-Host "`n--- 11b. WEB SERVER: PORT 80 + SITE ACCESS ---" -ForegroundColor Yellow
+
+# Verify Nginx default catch-all config exists
+$defaultConf = docker exec opanel cat /etc/nginx/sites-enabled/00-default.conf 2>&1
+Test-Case "Default catch-all Nginx config exists" { $defaultConf -match "server_name _" }
+Test-Case "Default catch-all has default_server" { $defaultConf -match "default_server" }
+
+# Verify port 80 catch-all returns proper message for unknown domains
+$catchAll = curl -s http://localhost:80 2>&1
+Test-Case "Port 80 catch-all returns site-not-configured message" { $catchAll -match "Site not configured" }
+
+# Create domain for web server tests
+$webDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"webtest.com"}'
+$webDid = if ($webDom.ok) { $webDom.data.id } else { 0 }
+Test-Case "Create web test domain" { $webDom.ok }
+
+# Verify PHP-FPM socket was created with consistent naming
+$webSocket = docker exec opanel ls -la /run/php/php8.4-fpm-op_webtest-com.sock 2>&1
+Test-Case "PHP-FPM socket created for domain" { $webSocket -match "op_webtest-com.sock" }
+
+# Verify socket name in Nginx config matches actual socket file
+$webNginx = docker exec opanel cat /etc/nginx/sites-enabled/webtest.com.conf 2>&1
+$webSocketInNginx = ($webNginx | Select-String "fastcgi_pass unix:(.*);").Matches.Groups[1].Value
+$webSocketFile = ($webSocket | Select-String "php8.4-fpm-op_webtest-com.sock").Matches.Count -gt 0
+Test-Case "Nginx config socket path matches actual socket" { $webSocketInNginx -match "op_webtest-com.sock" -and $webSocketFile }
+
+# Verify Nginx config does NOT have deprecated listen.mode (PHP-FPM pool check)
+$webPool = docker exec opanel cat /etc/php/8.4/fpm/pool.d/webtest.com.pool.conf 2>&1
+Test-Case "PHP-FPM pool has no deprecated listen.mode" { $webPool -notmatch "listen.mode" }
+
+# Verify site is accessible via port 80 with Host header
+$sitePage = try { (Invoke-WebRequest -Uri "http://localhost:80" -Headers @{"Host"="webtest.com"} -UseBasicParsing -TimeoutSec 5).Content } catch { $_.Exception.Response }
+Test-Case "Site accessible via port 80 with Host header" { $sitePage -match "Welcome to nginx" }
+
+# Verify default index.html was copied to httpdocs
+$webIndex = docker exec opanel cat /var/www/vhosts/webtest.com/httpdocs/index.html 2>&1
+Test-Case "Default index.html exists in httpdocs" { $webIndex -match "Welcome to nginx" }
+
+# Verify Nginx config has try_files =404 (not /index.php fallback)
+Test-Case "Nginx try_files returns 404 not PHP fallback" { $webNginx -match "try_files.*=404" }
+
+# Verify Nginx config does NOT have /index.php fallback
+Test-Case "Nginx has no index.php fallback in try_files" { $webNginx -notmatch "try_files.*index\.php" }
+
+# Verify Nginx config has security headers
+Test-Case "Nginx config has X-Frame-Options" { $webNginx -match "X-Frame-Options" }
+Test-Case "Nginx config has X-Content-Type-Options" { $webNginx -match "X-Content-Type-Options" }
+Test-Case "Nginx config has X-XSS-Protection" { $webNginx -match "X-XSS-Protection" }
+
+# Verify Nginx is running and config test passes
+$nginxTest = docker exec opanel nginx -t 2>&1
+Test-Case "Nginx config test passes" { $nginxTest -match "test is successful" }
+
+# Verify PHP-FPM process is running for this domain
+$webFpmProcs = docker exec opanel ps aux 2>&1
+Test-Case "PHP-FPM pool process running for domain" { $webFpmProcs -match "pool webtest.com" }
+
+# Verify Nginx is listening on port 80
+$nginxListening = docker exec opanel ss -tlnp 2>&1
+Test-Case "Nginx listening on port 80" { $nginxListening -match ":80" }
+
+# Cleanup web test domain
+Invoke-Api -Method "DELETE" -Path "/api/domains/$webDid" -Token $TOKEN | Out-Null
+$webSocketAfter = docker exec opanel ls /run/php/php8.4-fpm-op_webtest-com.sock 2>&1
+Test-Case "PHP-FPM socket removed on domain delete" { $webSocketAfter -match "No such file" }
+$webPoolAfter = docker exec opanel ls /etc/php/8.4/fpm/pool.d/webtest.com.pool.conf 2>&1
+Test-Case "PHP-FPM pool removed on domain delete" { $webPoolAfter -match "No such file" }
+
+# ============================================================
 Write-Host "`n--- 12. INTEGRATION: DATABASE + MARIADB ---" -ForegroundColor Yellow
 
 # Create DB + user + verify full lifecycle
@@ -655,6 +724,12 @@ $cleanupDbs = Invoke-Api -Path "/api/databases" -Token $TOKEN
 if ($cleanupDbs.ok) {
     foreach ($d in $cleanupDbs.data) {
         Invoke-Api -Method "DELETE" -Path "/api/databases/$($d.id)" -Token $TOKEN | Out-Null
+    }
+}
+$cleanupDoms = Invoke-Api -Path "/api/domains" -Token $TOKEN
+if ($cleanupDoms.ok) {
+    foreach ($d in $cleanupDoms.data) {
+        Invoke-Api -Method "DELETE" -Path "/api/domains/$($d.id)" -Token $TOKEN | Out-Null
     }
 }
 Test-Case "Cleanup completed" { $true }

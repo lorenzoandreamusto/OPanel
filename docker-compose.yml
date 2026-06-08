@@ -5,16 +5,16 @@ services:
     build: .
     container_name: opanel
     ports:
+      - "80:80"
+      - "443:443"
       - "8443:8443"
     volumes:
       - opanel-data:/opt/opanel/db
       - opanel-config:/etc/opanel
       - opanel-mysql:/var/lib/mysql
-      - opanel-nginx:/etc/nginx/sites-enabled
     restart: unless-stopped
 
 volumes:
   opanel-data:
   opanel-config:
   opanel-mysql:
-  opanel-nginx:

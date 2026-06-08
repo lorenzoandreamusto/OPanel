@@ -9,7 +9,6 @@ group = {{.Username}}
 listen = {{.SocketPath}}
 listen.owner = {{.Username}}
 listen.group = {{.Username}}
-listen.mode = 0660
 
 ; Process Manager settings
 pm = dynamic

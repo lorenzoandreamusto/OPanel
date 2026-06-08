@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"text/template"
 	"time"
 )
@@ -82,7 +83,7 @@ func (s *PHPFPMService) RemovePool(domain string) error {
 	return nil
 }
 
-// Reload restarts PHP-FPM service
+// Reload sends SIGUSR2 to PHP-FPM master to gracefully reload config
 func (s *PHPFPMService) Reload() error {
 	binary := fmt.Sprintf("php-fpm%s", s.PHPVersion)
 
@@ -93,19 +94,27 @@ func (s *PHPFPMService) Reload() error {
 		slog.Warn("phpfpm config test failed (non-fatal)", "output", string(output), "error", err)
 	}
 
-	// Gracefully stop existing PHP-FPM processes
-	cmd = exec.Command("pkill", "-TERM", "-f", binary)
-	_ = cmd.Run() // ignore error if not running
+	// Try graceful reload (sends SIGUSR2 to master process)
+	cmd = exec.Command(binary, "-reload")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		slog.Warn("phpfpm reload failed, trying restart", "output", string(output), "error", err)
 
-	// Wait for processes to exit
-	time.Sleep(500 * time.Millisecond)
+		// Fallback: kill and restart
+		// Find and kill existing master process
+		killCmd := exec.Command("pkill", "-TERM", "-f", "php-fpm: master")
+		_ = killCmd.Run()
+		time.Sleep(500 * time.Millisecond)
 
-	// Start PHP-FPM in background
-	cmd = exec.Command(binary)
-	if err := cmd.Start(); err != nil {
-		slog.Warn("phpfpm start failed (non-fatal)", "error", err)
-	} else {
-		go cmd.Wait()
+		// Remove stale PID file
+		pidFile := fmt.Sprintf("/run/php/php%s-fpm.pid", s.PHPVersion)
+		os.Remove(pidFile)
+
+		// Start PHP-FPM as daemon
+		startCmd := exec.Command(binary)
+		if err := startCmd.Run(); err != nil {
+			slog.Warn("phpfpm start failed (non-fatal)", "error", err)
+		}
 	}
 
 	slog.Info("Reloaded phpfpm", "version", s.PHPVersion)
@@ -114,6 +123,6 @@ func (s *PHPFPMService) Reload() error {
 
 // GetSocketPath returns the socket path for a domain
 func (s *PHPFPMService) GetSocketPath(domain string) string {
-	username := "op_" + domain
+	username := "op_" + strings.ReplaceAll(domain, ".", "-")
 	return filepath.Join(s.SocketDir, fmt.Sprintf("php%s-fpm-%s.sock", s.PHPVersion, username))
 }
