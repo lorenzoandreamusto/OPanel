@@ -3,7 +3,7 @@
 Server control panel scritto in Go, ispirato a Plesk Obsidian.
 
 **Target OS:** Debian 13 (Trixie)
-**Stack:** Go 1.23 / SQLite / JWT / Cobra CLI
+**Stack:** Go 1.24 / SQLite / JWT / Cobra CLI / Vue 3 / TypeScript / Tailwind CSS
 
 ---
 
@@ -41,11 +41,13 @@ docker compose down
 ### Build locale (senza Docker)
 
 ```bash
-make build        # Compila in ./bin/opaneld
+make build        # Compila in ./bin/opaneld (include frontend)
 make run          # Build + avvia server
 make test         # Test
 make fmt          # Formatta
 make vet          # Verifica
+make frontend-dev # Avvia sviluppo frontend (hot reload su porta 3000)
+make frontend-build # Build frontend per produzione
 ```
 
 ---
@@ -119,20 +121,32 @@ OPanel/
 │   ├── model/database.go         # Modelli Database
 │   ├── model/user.go             # Modelli dati
 │   ├── server/server.go          # Server HTTP
-│   ├── server/routes.go          # Routes
+│   ├── server/routes.go          # Routes + SPA serving
 │   └── service/
 │       ├── domain.go             # Logica business domini
 │       ├── mariadb.go            # Gestione MariaDB
 │       ├── nginx.go              # Template engine Nginx
 │       ├── phpfpm.go             # Gestione PHP-FPM pools
 │       └── system.go             # Operazioni Linux
+├── frontend/                     # Vue 3 SPA frontend
+│   ├── src/
+│   │   ├── main.ts              # Entry point
+│   │   ├── App.vue              # Root component
+│   │   ├── api/index.ts         # API client
+│   │   ├── stores/auth.ts       # Pinia auth store
+│   │   ├── router/index.ts      # Vue Router
+│   │   ├── components/          # Layout components
+│   │   └── views/               # Page views
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── tailwind.config.js
 ├── templates/
 │   ├── nginx/
 │   │   └── default.conf.template # Template config Nginx
 │   └── phpfpm/
 │       └── pool.conf.template    # Template pool PHP-FPM
 ├── config.example.yaml
-├── Dockerfile                    # Debian 13 (Trixie)
+├── Dockerfile                    # Debian 13 (Trixie) + frontend
 ├── docker-compose.yml
 ├── entrypoint.sh                 # Startup multi-servizio
 ├── Makefile
@@ -170,5 +184,5 @@ admin:
 
 Vedi [STATUS.md](STATUS.md) per lo stato attuale del progetto e la roadmap completa.
 
-**Sprint completati:** 1/7
-**Prossimo:** Sprint 2 - Web e File System
+**Sprint completati:** 4/7
+**Prossimo:** Sprint 5 - Posta e DNS

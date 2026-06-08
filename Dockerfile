@@ -1,5 +1,16 @@
-# Build stage
-FROM golang:1.24-bookworm AS builder
+# Build stage - Frontend
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /app/frontend
+
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install
+
+COPY frontend/ .
+RUN npm run build
+
+# Build stage - Go backend
+FROM golang:1.24-bookworm AS backend-builder
 
 WORKDIR /app
 
@@ -9,6 +20,9 @@ RUN go mod download
 
 # Copy source code
 COPY . .
+
+# Copy built frontend into the static directory
+COPY --from=frontend-builder /app/static /opt/opanel/static
 
 # Build the binary
 RUN CGO_ENABLED=0 go build -o /opt/opanel/bin/opaneld ./cmd/opaneld
@@ -29,10 +43,11 @@ RUN mkdir -p /run/php /var/run/mysqld /var/www/vhosts /etc/nginx/sites-enabled /
 # Set permissions for MariaDB runtime
 RUN chown mysql:mysql /var/run/mysqld
 
-COPY --from=builder /opt/opanel/bin/opaneld /opt/opanel/bin/opaneld
-RUN mkdir -p /opt/opanel/db /opt/opanel/templates /etc/opanel
+COPY --from=backend-builder /opt/opanel/bin/opaneld /opt/opanel/bin/opaneld
+RUN mkdir -p /opt/opanel/db /opt/opanel/templates /opt/opanel/static /etc/opanel
 
-COPY --from=builder /app/templates /opt/opanel/templates
+COPY --from=backend-builder /opt/opanel/static /opt/opanel/static
+COPY --from=backend-builder /app/templates /opt/opanel/templates
 COPY config.example.yaml /etc/opanel/config.yaml
 
 EXPOSE 8443

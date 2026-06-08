@@ -1,7 +1,11 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"opanel/internal/handler"
 	"opanel/internal/middleware"
@@ -46,5 +50,44 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	mux.HandleFunc("DELETE /api/databases/{id}/users/{userId}", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.DeleteDatabaseUser))
 	mux.HandleFunc("PUT /api/databases/{id}/users/{userId}", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.UpdateDatabaseUser))
 
+	// SPA static file serving
+	spaHandler := s.setupSPA()
+	if spaHandler != nil {
+		mux.Handle("/", spaHandler)
+	}
+
 	return mux
+}
+
+func (s *Server) setupSPA() http.Handler {
+	staticDir := filepath.Join(filepath.Dir(s.cfg.Paths.TemplatesDir), "static")
+
+	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	fsys := os.DirFS(staticDir)
+	fileServer := http.FileServer(http.FS(fsys))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// If the path has a file extension, serve the file directly
+		if ext := filepath.Ext(path); ext != "" {
+			if _, err := fs.Stat(fsys, strings.TrimPrefix(path, "/")); err == nil {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		// Try to serve the file
+		if _, err := fs.Stat(fsys, strings.TrimPrefix(path, "/")); err == nil {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// For all non-file paths, serve index.html (SPA fallback)
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
+	})
 }

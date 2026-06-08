@@ -1,14 +1,14 @@
 # OPanel - Stato del Progetto
 
-**Data:** 2026-06-08
-**Sprint attuale:** 3 (completato)
+**Data:** 2026-06-09
+**Sprint attuale:** 4 (completato)
 **Target OS:** Debian 13 (Trixie)
 
 ---
 
 ## Stato Attuale
 
-OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato completato lo **Sprint 3** con gestione PHP-FPM e database MariaDB.
+OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato completato lo **Sprint 4** con frontend MVP Vue 3.
 
 ### Cosa Funziona
 
@@ -141,24 +141,51 @@ OPanel/
 │   ├── model/domain.go           # Modello dati Domain
 │   ├── model/user.go             # Modello dati User
 │   ├── server/server.go          # HTTP server + bootstrap admin
-│   ├── server/routes.go          # Registrazione routes
+│   ├── server/routes.go          # Registrazione routes + SPA serving
 │   └── service/
 │       ├── domain.go             # Logica business domini
 │       ├── mariadb.go            # Gestione MariaDB
 │       ├── nginx.go              # Template engine Nginx
 │       ├── phpfpm.go             # Gestione PHP-FPM pools
 │       └── system.go             # Operazioni Linux (useradd, chroot)
+├── frontend/                     # Vue 3 SPA frontend
+│   ├── src/
+│   │   ├── main.ts              # Entry point
+│   │   ├── App.vue              # Root component
+│   │   ├── style.css            # Tailwind CSS styles
+│   │   ├── types/index.ts       # TypeScript types
+│   │   ├── api/index.ts         # API client
+│   │   ├── stores/auth.ts       # Pinia auth store
+│   │   ├── router/index.ts      # Vue Router + guards
+│   │   ├── components/
+│   │   │   ├── AppLayout.vue    # Main layout
+│   │   │   ├── AppSidebar.vue   # Sidebar navigation
+│   │   │   └── AppHeader.vue    # Top header bar
+│   │   └── views/
+│   │       ├── LoginView.vue    # Login page
+│   │       ├── DashboardView.vue # Dashboard with stats
+│   │       ├── DomainsView.vue  # Domain management
+│   │       ├── DatabasesView.vue # Database management
+│   │       ├── UsersView.vue    # User management
+│   │       └── SettingsView.vue # Settings page
+│   ├── package.json             # NPM dependencies
+│   ├── vite.config.ts           # Vite build config
+│   ├── tailwind.config.js       # Tailwind CSS config
+│   ├── tsconfig.json            # TypeScript config
+│   └── index.html               # HTML entry point
+├── static/                       # Built frontend (output of npm run build)
 ├── templates/
 │   ├── nginx/
-│   │   └── default.conf.template # Template config Nginx
+│   │   ├── default.conf.template # Template config Nginx
+│   │   └── index.html           # Default welcome page
 │   └── phpfpm/
-│       └── pool.conf.template    # Template pool PHP-FPM
+│       └── pool.conf.template   # Template pool PHP-FPM
 ├── config.example.yaml           # Config di esempio
 ├── install.sh                     # Installer script per Debian/Ubuntu
-├── Dockerfile                    # Multi-stage Debian 13
+├── Dockerfile                    # Multi-stage Debian 13 + frontend
 ├── docker-compose.yml            # Orchestrazione Docker
 ├── entrypoint.sh                 # Startup multi-servizio
-├── Makefile                      # Build commands
+├── Makefile                      # Build commands (include frontend)
 ├── Plan.md                       # Architettura completa
 ├── STATUS.md                     # Questo file
 ├── README.md                     # Documentazione
@@ -192,12 +219,21 @@ OPanel/
 - [x] API per creare/eliminare database
 - [x] Gestione utenti database con grant
 
-### Sprint 4 - Frontend MVP
-- [ ] Setup Vue 3 + TypeScript + Tailwind CSS
-- [ ] Layout: Sidebar fissa, Header, Area contenuto
-- [ ] Login page
-- [ ] Dashboard domini
-- [ ] Connessione API backend
+### Sprint 4 - Frontend MVP ✅
+- [x] Setup Vue 3 + TypeScript + Vite + Tailwind CSS
+- [x] Layout: Sidebar fissa, Header, Area contenuto
+- [x] Login page
+- [x] Dashboard domini (con statistiche e listings)
+- [x] Connessione API backend (client API completo)
+- [x] Router con auth guards
+- [x] Pinia store per autenticazione
+- [x] Gestione domini CRUD (crea, elimina, sospendi/attiva)
+- [x] Gestione database CRUD
+- [x] Gestione utenti CRUD (admin only)
+- [x] Dark mode nativo (tema Plesk-inspired)
+- [x] Go backend serve SPA con fallback a index.html
+- [x] Dockerfile multi-stage con build frontend integrato
+- [x] Makefile aggiornato con target frontend
 
 ### Sprint 5 - Posta e DNS
 - [ ] Controller Bind9 (generazione zone file)

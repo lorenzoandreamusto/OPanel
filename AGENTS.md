@@ -4,11 +4,12 @@
 
 Dopo **ogni** modifica al codice (bugfix, nuovo endpoint, refactoring, modifica ai servizi):
 
-1. **Eseguire `go build ./cmd/opaneld` e `go vet ./...`** per verificare che compili senza errori
-2. **Rebuild Docker:** `docker stop opanel; docker rm opanel; docker build -t opanel .`
-3. **Riavviare il container:** `docker run -d -p 8443:8443 --name opanel opanel`
-4. **Rieseguire TUTTI i test esistenti** per verificare che nulla sia rotto (regressione)
-5. **Aggiungere nuovi test** per ogni funzionalità aggiunta
+1. **Backend:** `go build ./cmd/opaneld && go vet ./...` per verificare che compili senza errori
+2. **Frontend:** `cd frontend && npm run typecheck` per verificare TypeScript
+3. **Rebuild Docker:** `docker stop opanel; docker rm opanel; docker build -t opanel .`
+4. **Riavviare il container:** `docker run -d -p 8443:8443 --name opanel opanel`
+5. **Rieseguire TUTTI i test esistenti** per verificare che nulla sia rotto (regressione)
+6. **Aggiungere nuovi test** per ogni funzionalità aggiunta
 
 ### Test completi (eseguire tutti ogni volta)
 
