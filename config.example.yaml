@@ -1,0 +1,19 @@
+# OPanel Configuration
+# Copy this file to /etc/opanel/config.yaml and edit as needed
+
+server:
+  host: "0.0.0.0"
+  port: 8443
+
+database:
+  path: "/opt/opanel/db/opanel.db"
+
+jwt:
+  secret: "CHANGE THIS TO A RANDOM SECRET IN PRODUCTION - use: openssl rand -hex 32"
+  expiry_hours: 24
+  refresh_days: 30
+
+admin:
+  username: "admin"
+  password: "admin"
+  email: "admin@localhost"

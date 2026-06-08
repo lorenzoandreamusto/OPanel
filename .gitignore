@@ -1,0 +1,30 @@
+# Binaries
+opaneld
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Go coverage
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# DB
+*.db
+*.db-journal
+
+# Config
+config.yaml
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  opanel:
+    build: .
+    container_name: opanel
+    ports:
+      - "8443:8443"
+    volumes:
+      - opanel-data:/opt/opanel/db
+      - opanel-config:/etc/opanel
+    restart: unless-stopped
+
+volumes:
+  opanel-data:
+  opanel-config:
