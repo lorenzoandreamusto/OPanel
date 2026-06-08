@@ -9,8 +9,12 @@ services:
     volumes:
       - opanel-data:/opt/opanel/db
       - opanel-config:/etc/opanel
+      - opanel-mysql:/var/lib/mysql
+      - opanel-nginx:/etc/nginx/sites-enabled
     restart: unless-stopped
 
 volumes:
   opanel-data:
   opanel-config:
+  opanel-mysql:
+  opanel-nginx:

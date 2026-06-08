@@ -3,13 +3,17 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"opanel/internal/database"
 	"opanel/internal/middleware"
 	"opanel/internal/model"
 	"opanel/internal/service"
 )
+
+var validDomainName = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$`)
 
 type DomainHandler struct {
 	domainService *service.DomainService
@@ -92,6 +96,21 @@ func (h *DomainHandler) CreateDomain(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" {
 		http.Error(w, `{"error":"domain name is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Name) > 253 {
+		http.Error(w, `{"error":"domain name too long (max 253 characters)"}`, http.StatusBadRequest)
+		return
+	}
+
+	if strings.Contains(req.Name, "..") {
+		http.Error(w, `{"error":"domain name cannot contain consecutive dots"}`, http.StatusBadRequest)
+		return
+	}
+
+	if !validDomainName.MatchString(req.Name) {
+		http.Error(w, `{"error":"invalid domain name format"}`, http.StatusBadRequest)
 		return
 	}
 

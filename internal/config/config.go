@@ -9,6 +9,7 @@ import (
 type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
+	MariaDB  MariaDBConfig  `mapstructure:"mariadb"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Admin    AdminConfig    `mapstructure:"admin"`
 	Paths    PathsConfig    `mapstructure:"paths"`
@@ -28,6 +29,12 @@ type JWTConfig struct {
 	Secret string `mapstructure:"secret"`
 }
 
+type MariaDBConfig struct {
+	SocketPath string `mapstructure:"socket_path"`
+	Host       string `mapstructure:"host"`
+	Port       int    `mapstructure:"port"`
+}
+
 type AdminConfig struct {
 	Username string `mapstructure:"username"`
 	Email    string `mapstructure:"email"`
@@ -35,10 +42,12 @@ type AdminConfig struct {
 }
 
 type PathsConfig struct {
-	VhostsDir    string `mapstructure:"vhosts_dir"`
-	TemplatesDir string `mapstructure:"templates_dir"`
-	SshdConfig   string `mapstructure:"sshd_config"`
-	NginxConfDir string `mapstructure:"nginx_conf_dir"`
+	VhostsDir       string `mapstructure:"vhosts_dir"`
+	TemplatesDir    string `mapstructure:"templates_dir"`
+	SshdConfig      string `mapstructure:"sshd_config"`
+	NginxConfDir    string `mapstructure:"nginx_conf_dir"`
+	PHPFPMPoolDir   string `mapstructure:"php_fpm_pool_dir"`
+	PHPFPMSocketDir string `mapstructure:"php_fpm_socket_dir"`
 }
 
 type SystemConfig struct {
@@ -60,8 +69,13 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("paths.templates_dir", "/opt/opanel/templates")
 	v.SetDefault("paths.sshd_config", "/etc/ssh/sshd_config")
 	v.SetDefault("paths.nginx_conf_dir", "/etc/nginx/sites-enabled")
+	v.SetDefault("mariadb.socket_path", "/var/run/mysqld/mysqld.sock")
+	v.SetDefault("mariadb.host", "localhost")
+	v.SetDefault("mariadb.port", 3306)
+	v.SetDefault("paths.php_fpm_pool_dir", "/etc/php/8.4/fpm/pool.d")
+	v.SetDefault("paths.php_fpm_socket_dir", "/run/php")
 	v.SetDefault("system.opanel_group", "opanel_users")
-	v.SetDefault("system.php_version", "8.2")
+	v.SetDefault("system.php_version", "8.4")
 
 	v.SetConfigFile(path)
 	v.SetConfigType("yaml")

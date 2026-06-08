@@ -1,14 +1,14 @@
 # OPanel - Stato del Progetto
 
 **Data:** 2026-06-08
-**Sprint attuale:** 2 (completato)
+**Sprint attuale:** 3 (completato)
 **Target OS:** Debian 13 (Trixie)
 
 ---
 
 ## Stato Attuale
 
-OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato completato lo **Sprint 2** con gestione domini, utenti Linux e template Nginx.
+OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato completato lo **Sprint 3** con gestione PHP-FPM e database MariaDB.
 
 ### Cosa Funziona
 
@@ -33,6 +33,13 @@ OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato complet
 - `PUT /api/users/:id` - Aggiorna utente (admin only)
 - `DELETE /api/users/:id` - Elimina utente (admin only)
 - `GET /api/health` - Health check
+- `GET /api/databases` - Lista database
+- `GET /api/databases/:id` - Dettaglio database
+- `POST /api/databases` - Crea database
+- `DELETE /api/databases/:id` - Elimina database (admin only)
+- `POST /api/databases/:id/users` - Crea utente database
+- `DELETE /api/databases/:id/users/:userId` - Elimina utente database
+- `PUT /api/databases/:id/users/:userId` - Aggiorna utente database
 
 #### Sicurezza
 - Password hashate con **bcrypt**
@@ -70,6 +77,29 @@ OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato complet
 - Blocco file sensibili (.env, .log, .sql, .conf)
 - Cache statica per asset (30 giorni)
 
+#### PHP-FPM (Sprint 3)
+- Template Go per generazione pool config PHP-FPM
+- Pool dedicato per dominio con isolamento utente
+- Socket UNIX per ogni dominio (`/run/php/php8.2-fpm-op_{domain}.sock`)
+- Configurazione PM dynamic (5 max children, 2 start servers)
+- Limiti risorse per pool (128M memory, 128M upload, 300s timeout)
+- Security hardening (disabled functions, expose_php off)
+- Reload automatico PHP-FPM dopo creazione/modifica pool
+
+#### MariaDB (Sprint 3)
+- Connessione MariaDB via Unix socket (root, no password)
+- API CRUD database:
+  - `GET /api/databases` - Lista database (admin: tutti, user: propri)
+  - `GET /api/databases/{id}` - Dettaglio database
+  - `POST /api/databases` - Crea database (MariaDB + tracking SQLite)
+  - `DELETE /api/databases/{id}` - Elimina database (admin only)
+- API gestione utenti database:
+  - `POST /api/databases/{id}/users` - Crea utente MariaDB + grant
+  - `DELETE /api/databases/{id}/users/{userId}` - Elimina utente MariaDB
+  - `PUT /api/databases/{id}/users/{userId}` - Cambia password/privilegi
+- Tracking database e utenti in SQLite (tabelle `databases`, `database_users`)
+- Ownership check: user vede solo i propri database
+
 #### CLI (Cobra)
 - `opaneld server` - Avvia il server
 - `opaneld server --config /path/to/config.yaml` - Config personalizzata
@@ -100,28 +130,34 @@ OPanel/
 │   ├── database/db.go            # Connessione SQLite
 │   ├── database/migrations.go    # Migrazioni automatiche
 │   ├── handler/auth.go           # Login/logout/me
+│   ├── handler/database.go       # CRUD database
 │   ├── handler/domain.go         # CRUD domini
 │   ├── handler/health.go         # Health check
 │   ├── handler/user.go           # CRUD utenti
 │   ├── jwt/jwt.go                # Generazione/validazione JWT
 │   ├── middleware/auth.go        # Auth middleware + admin guard
 │   ├── middleware/logging.go     # Request logging
+│   ├── model/database.go         # Modello dati Database
 │   ├── model/domain.go           # Modello dati Domain
 │   ├── model/user.go             # Modello dati User
 │   ├── server/server.go          # HTTP server + bootstrap admin
 │   ├── server/routes.go          # Registrazione routes
 │   └── service/
 │       ├── domain.go             # Logica business domini
+│       ├── mariadb.go            # Gestione MariaDB
 │       ├── nginx.go              # Template engine Nginx
+│       ├── phpfpm.go             # Gestione PHP-FPM pools
 │       └── system.go             # Operazioni Linux (useradd, chroot)
 ├── templates/
-│   └── nginx/
-│       └── default.conf.template # Template config Nginx
+│   ├── nginx/
+│   │   └── default.conf.template # Template config Nginx
+│   └── phpfpm/
+│       └── pool.conf.template    # Template pool PHP-FPM
 ├── config.example.yaml           # Config di esempio
 ├── install.sh                     # Installer script per Debian/Ubuntu
 ├── Dockerfile                    # Multi-stage Debian 13
-├── Dockerfile.test               # Test installer su Debian vergine
 ├── docker-compose.yml            # Orchestrazione Docker
+├── entrypoint.sh                 # Startup multi-servizio
 ├── Makefile                      # Build commands
 ├── Plan.md                       # Architettura completa
 ├── STATUS.md                     # Questo file
@@ -150,11 +186,11 @@ OPanel/
 - [x] Stampa a schermo delle credenziali di accesso e URL
 - [x] Rilevamento ambienti Docker/container (skip systemd/UFW)
 
-### Sprint 3 - PHP & Database
-- [ ] Integrazione PHP-FPM (pool per sito, socket UNIX)
-- [ ] Installazione stack MariaDB locale
-- [ ] API per creare/eliminare database
-- [ ] Gestione utenti database con grant
+### Sprint 3 - PHP & Database ✅
+- [x] Integrazione PHP-FPM (pool per sito, socket UNIX)
+- [x] Installazione stack MariaDB locale
+- [x] API per creare/eliminare database
+- [x] Gestione utenti database con grant
 
 ### Sprint 4 - Frontend MVP
 - [ ] Setup Vue 3 + TypeScript + Tailwind CSS
@@ -265,6 +301,21 @@ curl -X POST http://localhost:8443/api/domains \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"example.com"}'
+
+# Lista database
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8443/api/databases
+
+# Crea database
+curl -X POST http://localhost:8443/api/databases \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"mydb"}'
+
+# Crea utente database
+curl -X POST http://localhost:8443/api/databases/1/users \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"dbuser","password":"secret","privileges":"ALL PRIVILEGES"}'
 ```
 
 ---
@@ -278,6 +329,7 @@ curl -X POST http://localhost:8443/api/domains \
 | `github.com/spf13/cobra` | v1.8.1 | CLI framework |
 | `github.com/spf13/viper` | v1.19.0 | Config YAML |
 | `golang.org/x/crypto` | v0.21.0 | Bcrypt password hash |
+| `github.com/go-sql-driver/mysql` | v1.8.1 | Driver MariaDB/MySQL |
 
 ---
 

@@ -74,6 +74,13 @@ Credenziali admin default:
 | `POST` | `/api/users` | Yes (admin) | Create user |
 | `PUT` | `/api/users/:id` | Yes (admin) | Update user |
 | `DELETE` | `/api/users/:id` | Yes (admin) | Delete user |
+| `GET` | `/api/databases` | Yes | List databases |
+| `GET` | `/api/databases/:id` | Yes | Get database |
+| `POST` | `/api/databases` | Yes | Create database |
+| `DELETE` | `/api/databases/:id` | Yes (admin) | Delete database |
+| `POST` | `/api/databases/:id/users` | Yes | Create database user |
+| `DELETE` | `/api/databases/:id/users/:userId` | Yes | Delete database user |
+| `PUT` | `/api/databases/:id/users/:userId` | Yes | Update database user |
 
 ### Esempi
 
@@ -103,17 +110,31 @@ OPanel/
 │   ├── database/db.go            # SQLite WAL
 │   ├── database/migrations.go    # Migrazioni auto
 │   ├── handler/auth.go           # Login/logout/me
+│   ├── handler/database.go       # CRUD database
 │   ├── handler/health.go         # Health check
 │   ├── handler/user.go           # CRUD utenti
 │   ├── jwt/jwt.go                # Token JWT
 │   ├── middleware/auth.go        # Auth + admin guard
 │   ├── middleware/logging.go     # Logging
+│   ├── model/database.go         # Modelli Database
 │   ├── model/user.go             # Modelli dati
 │   ├── server/server.go          # Server HTTP
-│   └── server/routes.go          # Routes
+│   ├── server/routes.go          # Routes
+│   └── service/
+│       ├── domain.go             # Logica business domini
+│       ├── mariadb.go            # Gestione MariaDB
+│       ├── nginx.go              # Template engine Nginx
+│       ├── phpfpm.go             # Gestione PHP-FPM pools
+│       └── system.go             # Operazioni Linux
+├── templates/
+│   ├── nginx/
+│   │   └── default.conf.template # Template config Nginx
+│   └── phpfpm/
+│       └── pool.conf.template    # Template pool PHP-FPM
 ├── config.example.yaml
 ├── Dockerfile                    # Debian 13 (Trixie)
 ├── docker-compose.yml
+├── entrypoint.sh                 # Startup multi-servizio
 ├── Makefile
 ├── STATUS.md                     # Stato progetto
 └── Plan.md                       # Architettura

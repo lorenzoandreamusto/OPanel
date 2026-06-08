@@ -25,6 +25,7 @@ VHOSTS_DIR="/var/www/vhosts"
 SERVICE_NAME="opanel"
 ADMIN_PORT=8443
 HAS_SYSTEMD=false
+DB_ROOT_PASSWORD=""
 
 # Check if systemd is available
 check_systemd() {
@@ -237,6 +238,12 @@ generate_password() {
     log_info "Generated admin password"
 }
 
+# Generate database root password
+generate_db_password() {
+    DB_ROOT_PASSWORD=$(openssl rand -base64 16 | tr -d '=/+' | head -c 20)
+    log_info "Generated MariaDB root password"
+}
+
 # Create config file
 create_config() {
     log_info "Creating configuration file..."
@@ -251,6 +258,12 @@ server:
 
 database:
   path: "$DB_DIR/opanel.db"
+
+mysql:
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "$DB_ROOT_PASSWORD"
 
 jwt:
   secret: "$(openssl rand -hex 32)"
@@ -275,6 +288,67 @@ EOF
 
     chmod 600 "$CONFIG_DIR/config.yaml"
     log_info "Configuration created at $CONFIG_DIR/config.yaml"
+}
+
+# Initialize and start MariaDB
+init_mariadb() {
+    log_info "Initializing MariaDB..."
+
+    # Ensure MariaDB data directory exists with correct permissions
+    mkdir -p /var/run/mysqld
+    chown mysql:mysql /var/run/mysqld
+
+    # Initialize database if not already done
+    if [ ! -d /var/lib/mysql/mysql ]; then
+        log_info "Initializing MariaDB data directory..."
+        mysql_install_db --user=mysql --datadir=/var/lib/mysql >/dev/null 2>&1
+    fi
+
+    # Start MariaDB
+    log_info "Starting MariaDB..."
+    systemctl start mariadb
+    systemctl enable mariadb
+
+    # Wait for MariaDB to be ready
+    for i in $(seq 1 30); do
+        if mysqladmin ping --socket=/var/run/mysqld/mysqld.sock 2>/dev/null; then
+            log_info "MariaDB is ready"
+            break
+        fi
+        sleep 1
+    done
+}
+
+# Secure MariaDB installation
+secure_mariadb() {
+    log_info "Securing MariaDB installation..."
+
+    # Set root password
+    mysql -u root <<EOF
+ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASSWORD';
+FLUSH PRIVILEGES;
+EOF
+
+    # Remove anonymous users
+    mysql -u root -p"$DB_ROOT_PASSWORD" <<EOF
+DELETE FROM mysql.user WHERE User='';
+FLUSH PRIVILEGES;
+EOF
+
+    # Remove remote root login
+    mysql -u root -p"$DB_ROOT_PASSWORD" <<EOF
+DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+FLUSH PRIVILEGES;
+EOF
+
+    # Remove test database
+    mysql -u root -p"$DB_ROOT_PASSWORD" <<EOF
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+FLUSH PRIVILEGES;
+EOF
+
+    log_info "MariaDB secured successfully"
 }
 
 # Create systemd service
@@ -393,6 +467,7 @@ print_summary() {
     echo -e "  Config:   $CONFIG_DIR/config.yaml"
     echo -e "  Binary:   $BIN_DIR/opaneld"
     echo -e "  Database: $DB_DIR/opanel.db"
+    echo -e "  MySQL:    root@localhost (password in config.yaml)"
     if [ "$HAS_SYSTEMD" = true ]; then
         echo -e "  Logs:     journalctl -u $SERVICE_NAME -f"
     else
@@ -420,7 +495,10 @@ main() {
     build_opaneld
     copy_templates
     generate_password
+    generate_db_password
     create_config
+    init_mariadb
+    secure_mariadb
     create_service
     configure_firewall
     start_opanel

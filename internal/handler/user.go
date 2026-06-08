@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"opanel/internal/database"
+	"opanel/internal/middleware"
 	"opanel/internal/model"
 
 	"golang.org/x/crypto/bcrypt"
@@ -18,6 +19,36 @@ type UserHandler struct {
 
 func NewUserHandler(db *database.DB) *UserHandler {
 	return &UserHandler{db: db}
+}
+
+func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		http.Error(w, `{"error":"user id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid user id"}`, http.StatusBadRequest)
+		return
+	}
+
+	var user model.User
+	err = h.db.QueryRow(
+		"SELECT id, username, email, role, created_at, updated_at FROM users WHERE id = ?", id,
+	).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+	if err == sql.ErrNoRows {
+		http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
 }
 
 func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
@@ -194,6 +225,13 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		http.Error(w, `{"error":"invalid user id"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Prevent self-deletion
+	claims := middleware.GetClaims(r)
+	if claims != nil && claims.UserID == id {
+		http.Error(w, `{"error":"cannot delete yourself"}`, http.StatusBadRequest)
 		return
 	}
 

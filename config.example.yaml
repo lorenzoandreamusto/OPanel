@@ -8,6 +8,11 @@ server:
 database:
   path: "/opt/opanel/db/opanel.db"
 
+mariadb:
+  socket_path: "/var/run/mysqld/mysqld.sock"
+  host: "localhost"
+  port: 3306
+
 jwt:
   secret: "CHANGE THIS TO A RANDOM SECRET IN PRODUCTION - use: openssl rand -hex 32"
   expiry_hours: 24
@@ -23,7 +28,9 @@ paths:
   templates_dir: "/opt/opanel/templates"
   sshd_config: "/etc/ssh/sshd_config"
   nginx_conf_dir: "/etc/nginx/sites-enabled"
+  php_fpm_pool_dir: "/etc/php/8.4/fpm/pool.d"
+  php_fpm_socket_dir: "/run/php"
 
 system:
   opanel_group: "opanel_users"
-  php_version: "8.2"
+  php_version: "8.4"

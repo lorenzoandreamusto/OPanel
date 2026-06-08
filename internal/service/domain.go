@@ -24,6 +24,7 @@ type DomainService struct {
 	db     *database.DB
 	sys    *SystemService
 	nginx  *NginxService
+	phpfpm *PHPFPMService
 }
 
 func NewDomainService(db *database.DB) *DomainService {
@@ -31,6 +32,7 @@ func NewDomainService(db *database.DB) *DomainService {
 		db:    db,
 		sys:   NewSystemService(),
 		nginx: NewNginxService(NginxTemplateDir, NginxConfigDir),
+		phpfpm: NewPHPFPMService(NginxTemplateDir, "8.4", "/etc/php/8.4/fpm/pool.d", "/run/php"),
 	}
 }
 
@@ -114,8 +116,13 @@ func (s *DomainService) CreateDomain(name string, ownerID int) (*model.Domain, e
 		slog.Warn("Failed to setup SFTP chroot (non-fatal)", "error", err)
 	}
 
-	// 11. Generate Nginx config
-	phpSocket := fmt.Sprintf("/run/php/php8.2-fpm-%s.sock", username)
+	// 11. Create PHP-FPM pool
+	phpSocket := s.phpfpm.GetSocketPath(name)
+	if err := s.phpfpm.CreatePool(name, username, documentRoot); err != nil {
+		slog.Warn("Failed to create PHP-FPM pool (non-fatal)", "error", err)
+	}
+
+	// 12. Generate Nginx config
 	nginxData := NginxTemplateData{
 		Domain:        name,
 		DocumentRoot:  documentRoot,
@@ -126,9 +133,12 @@ func (s *DomainService) CreateDomain(name string, ownerID int) (*model.Domain, e
 		slog.Warn("Failed to generate nginx config (non-fatal)", "error", err)
 	}
 
-	// 12. Reload Nginx
+	// 13. Reload Nginx and PHP-FPM
 	if err := s.nginx.Reload(); err != nil {
 		slog.Warn("Failed to reload nginx (non-fatal)", "error", err)
+	}
+	if err := s.phpfpm.Reload(); err != nil {
+		slog.Warn("Failed to reload PHP-FPM (non-fatal)", "error", err)
 	}
 
 	// 13. Insert into database
@@ -174,28 +184,38 @@ func (s *DomainService) DeleteDomain(id int) (*model.Domain, error) {
 
 	username := "op_" + domain.Name
 
-	// 2. Remove Nginx config
+	// 2. Remove PHP-FPM pool
+	if err := s.phpfpm.RemovePool(domain.Name); err != nil {
+		slog.Warn("Failed to remove PHP-FPM pool", "error", err)
+	}
+
+	// 3. Remove Nginx config
 	if err := s.nginx.RemoveConfig(domain.Name); err != nil {
 		slog.Warn("Failed to remove nginx config", "error", err)
 	}
 
-	// 3. Reload Nginx
+	// 4. Reload Nginx
 	if err := s.nginx.Reload(); err != nil {
 		slog.Warn("Failed to reload nginx", "error", err)
 	}
 
-	// 4. Delete Linux user (this also removes home dir with -r)
+	// 5. Reload PHP-FPM
+	if err := s.phpfpm.Reload(); err != nil {
+		slog.Warn("Failed to reload PHP-FPM", "error", err)
+	}
+
+	// 6. Delete Linux user (this also removes home dir with -r)
 	if err := s.sys.DeleteUser(username); err != nil {
 		slog.Warn("Failed to delete Linux user", "error", err)
 	}
 
-	// 5. Remove directory structure (fallback if userdel didn't remove it)
+	// 7. Remove directory structure (fallback if userdel didn't remove it)
 	domainDir := filepath.Join(VhostsBaseDir, domain.Name)
 	if err := os.RemoveAll(domainDir); err != nil {
 		slog.Warn("Failed to remove domain directory", "error", err)
 	}
 
-	// 6. Delete from database
+	// 8. Delete from database
 	if _, err := s.db.Exec("DELETE FROM domains WHERE id = ?", id); err != nil {
 		return nil, fmt.Errorf("failed to delete domain from database: %w", err)
 	}

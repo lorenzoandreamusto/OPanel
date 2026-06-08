@@ -33,6 +33,24 @@ var migrations = []string{
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 	)`,
+	`CREATE TABLE IF NOT EXISTS databases (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT UNIQUE NOT NULL,
+		owner_id INTEGER NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+	)`,
+	`CREATE TABLE IF NOT EXISTS database_users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL,
+		host TEXT NOT NULL DEFAULT '%',
+		database_id INTEGER NOT NULL,
+		privileges TEXT NOT NULL DEFAULT 'ALL PRIVILEGES',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (database_id) REFERENCES databases(id) ON DELETE CASCADE,
+		UNIQUE(username, host, database_id)
+	)`,
 }
 
 func (d *DB) RunMigrations() error {
