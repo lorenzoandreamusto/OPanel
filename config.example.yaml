@@ -17,3 +17,13 @@ admin:
   username: "admin"
   password: "admin"
   email: "admin@localhost"
+
+paths:
+  vhosts_dir: "/var/www/vhosts"
+  templates_dir: "/opt/opanel/templates"
+  sshd_config: "/etc/ssh/sshd_config"
+  nginx_conf_dir: "/etc/nginx/sites-enabled"
+
+system:
+  opanel_group: "opanel_users"
+  php_version: "8.2"

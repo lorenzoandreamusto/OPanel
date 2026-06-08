@@ -1,14 +1,14 @@
 # OPanel - Stato del Progetto
 
 **Data:** 2026-06-08
-**Sprint attuale:** 1 (completato)
+**Sprint attuale:** 2 (completato)
 **Target OS:** Debian 13 (Trixie)
 
 ---
 
 ## Stato Attuale
 
-OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato completato lo **Sprint 1** con tutte le funzionalita' base del backend.
+OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato completato lo **Sprint 2** con gestione domini, utenti Linux e template Nginx.
 
 ### Cosa Funziona
 
@@ -47,7 +47,28 @@ OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato complet
 - Busy timeout 5s
 - Foreign keys abilitate
 - Sistema di migrazioni automatico con tabella `migrations`
-- Schema: tabelle `users`, `refresh_tokens`, `migrations`
+- Schema: tabelle `users`, `refresh_tokens`, `domains`, `migrations`
+
+#### Gestione Domini (Sprint 2)
+- `GET /api/domains` - Lista domini (tutti per admin,propri per user)
+- `GET /api/domains/{id}` - Dettaglio dominio
+- `POST /api/domains` - Crea dominio (crea utente Linux, directory, config Nginx)
+- `PUT /api/domains/{id}` - Aggiorna stato dominio (active/suspended/pending)
+- `DELETE /api/domains/{id}` - Elimina dominio (admin only, rimuove tutto)
+
+#### Sistema Linux (Sprint 2)
+- Generazione utenti Linux con `useradd` (home in `/var/www/vhosts/`)
+- Utenti nel gruppo `opanel_users`
+- Chroot SFTP configurato in `/etc/ssh/sshd_config`
+- Struttura directory: `httpdocs/`, `logs/`, `tmp/`
+- Ownership corretta sugli header di directory
+
+#### Template Engine Nginx (Sprint 2)
+- Template Go per generazione config Nginx virtual host
+- Security headers (X-Frame-Options, X-Content-Type-Options, X-XSS-Protection)
+- Gestione PHP-FPM via socket UNIX
+- Blocco file sensibili (.env, .log, .sql, .conf)
+- Cache statica per asset (30 giorni)
 
 #### CLI (Cobra)
 - `opaneld server` - Avvia il server
@@ -58,7 +79,7 @@ OPanel e' un clone di Plesk Obsidian scritto in Go. Attualmente e' stato complet
 
 #### Configurazione
 - File YAML con viper
-- Strutture: `server`, `database`, `jwt`, `admin`
+- Strutture: `server`, `database`, `jwt`, `admin`, `paths`, `system`
 - Default sensati per tutti i campi
 - Auto-creazione admin al primo avvio se non esistono utenti
 
@@ -79,16 +100,27 @@ OPanel/
 │   ├── database/db.go            # Connessione SQLite
 │   ├── database/migrations.go    # Migrazioni automatiche
 │   ├── handler/auth.go           # Login/logout/me
+│   ├── handler/domain.go         # CRUD domini
 │   ├── handler/health.go         # Health check
 │   ├── handler/user.go           # CRUD utenti
 │   ├── jwt/jwt.go                # Generazione/validazione JWT
 │   ├── middleware/auth.go        # Auth middleware + admin guard
 │   ├── middleware/logging.go     # Request logging
+│   ├── model/domain.go           # Modello dati Domain
 │   ├── model/user.go             # Modello dati User
 │   ├── server/server.go          # HTTP server + bootstrap admin
-│   └── server/routes.go          # Registrazione routes
+│   ├── server/routes.go          # Registrazione routes
+│   └── service/
+│       ├── domain.go             # Logica business domini
+│       ├── nginx.go              # Template engine Nginx
+│       └── system.go             # Operazioni Linux (useradd, chroot)
+├── templates/
+│   └── nginx/
+│       └── default.conf.template # Template config Nginx
 ├── config.example.yaml           # Config di esempio
+├── install.sh                     # Installer script per Debian/Ubuntu
 ├── Dockerfile                    # Multi-stage Debian 13
+├── Dockerfile.test               # Test installer su Debian vergine
 ├── docker-compose.yml            # Orchestrazione Docker
 ├── Makefile                      # Build commands
 ├── Plan.md                       # Architettura completa
@@ -100,14 +132,23 @@ OPanel/
 
 ---
 
-## Cosa Manca (Sprint 2-7)
+## Cosa Manca (Sprint 3-7)
 
-### Sprint 2 - Web e File System
-- [ ] Generazione utenti Linux (`useradd`) con home in `/var/www/vhosts/`
-- [ ] Configurazione chroot SFTP per utenti `opanel_users`
-- [ ] Template engine Go per generare config Nginx/Apache
-- [ ] Creazione/cancellazione domini fisica su disco
-- [ ] Struttura directory: `httpdocs/`, `logs/`, `tmp/`
+### Installer Script ✅
+- [x] Script `install.sh` che installa OPanel su Debian/Ubuntu vergine
+- [x] Controllo OS (`/etc/os-release`) e requisiti hardware minimi (RAM, disco)
+- [x] Aggiornamento repository (`apt update && apt upgrade -y`)
+- [x] Installazione dipendenze di sistema: `nginx`, `php-fpm`, `mariadb-server`, `postfix`, `dovecot`, `rspamd`, `bind9`, `ufw`, `fail2ban`, `openssh-server`, `tar`, `wget`, `curl`, `sudo`, `ca-certificates`
+- [x] Creazione struttura directory OPanel: `/opt/opanel/{bin,db,templates,extensions,backups,ssl}`
+- [x] Copia/binaria di `opaneld` in `/opt/opanel/bin/` (attualmente build locale, futuro: download da GitHub release)
+- [x] Creazione database SQLite vuoto in `/opt/opanel/db/opanel.db`
+- [x] Generazione password admin casuale sicura e salvataggio in config
+- [x] Generazione file config `/etc/opanel/config.yaml` con parametri generati
+- [x] Creazione servizio Systemd `/etc/systemd/system/opanel.service` (se systemd disponibile)
+- [x] `systemctl enable --now opanel` (se systemd disponibile)
+- [x] Configurazione iniziale UFW (apertura porte 80, 443, 22, 8443) (se systemd disponibile)
+- [x] Stampa a schermo delle credenziali di accesso e URL
+- [x] Rilevamento ambienti Docker/container (skip systemd/UFW)
 
 ### Sprint 3 - PHP & Database
 - [ ] Integrazione PHP-FPM (pool per sito, socket UNIX)
@@ -189,6 +230,18 @@ make fmt          # Formatta codice
 make vet          # Verifica codice
 ```
 
+### Installazione su Server
+
+```bash
+# Copia la cartella OPanel sul server
+scp -r OPanel/ root@your-server:/tmp/opanel
+
+# Esegui l'installer
+ssh root@your-server
+cd /tmp/opanel
+bash install.sh
+```
+
 ### Test API
 
 ```bash
@@ -203,6 +256,15 @@ curl -X POST http://localhost:8443/api/auth/login \
 # Usare il token
 TOKEN="<token-from-login>"
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8443/api/users
+
+# Lista domini
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8443/api/domains
+
+# Crea dominio
+curl -X POST http://localhost:8443/api/domains \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"example.com"}'
 ```
 
 ---
@@ -226,3 +288,4 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8443/api/users
 - **Multi-stage Docker**: Image finale ~15MB (debian:trixie-slim + binario)
 - **Admin auto-create**: Al primo avvio, se la tabella `users` e' vuota, crea l'admin dal config
 - **Migrazioni**: Sistema incrementale con tabella `migrations` per tracciare applicazioni
+- **Config Estesa**: Sezioni `paths` e `system` per percorsi e configurazioni Linux

@@ -22,6 +22,17 @@ var migrations = []string{
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 	)`,
+	`CREATE TABLE IF NOT EXISTS domains (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT UNIQUE NOT NULL,
+		ip_address TEXT NOT NULL DEFAULT '0.0.0.0',
+		status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('active', 'suspended', 'pending')),
+		owner_id INTEGER NOT NULL,
+		document_root TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+	)`,
 }
 
 func (d *DB) RunMigrations() error {

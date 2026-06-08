@@ -22,8 +22,9 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=builder /opt/opanel/bin/opaneld /opt/opanel/bin/opaneld
 
-RUN mkdir -p /opt/opanel/db /etc/opanel
+RUN mkdir -p /opt/opanel/db /opt/opanel/templates /etc/opanel
 
+COPY --from=builder /app/templates /opt/opanel/templates
 COPY config.example.yaml /etc/opanel/config.yaml
 
 EXPOSE 8443
