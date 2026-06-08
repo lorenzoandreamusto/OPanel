@@ -21,10 +21,10 @@ type DatabaseHandler struct {
 	mariadbSvc *service.MariaDBService
 }
 
-func NewDatabaseHandler(db *database.DB) *DatabaseHandler {
+func NewDatabaseHandler(db *database.DB, socketPath, host string, port int) *DatabaseHandler {
 	return &DatabaseHandler{
 		db:         db,
-		mariadbSvc: service.NewMariaDBService(db),
+		mariadbSvc: service.NewMariaDBService(db, socketPath, host, port),
 	}
 }
 
@@ -160,7 +160,7 @@ func (h *DatabaseHandler) CreateDatabase(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.mariadbSvc.CreateDatabase(req.Name); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"failed to create database"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -233,7 +233,7 @@ func (h *DatabaseHandler) DeleteDatabase(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.mariadbSvc.DropDatabase(db.Name); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"failed to delete database"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -310,13 +310,13 @@ func (h *DatabaseHandler) CreateDatabaseUser(w http.ResponseWriter, r *http.Requ
 
 	host := "%"
 	if err := h.mariadbSvc.CreateUser(req.Username, host, req.Password); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"failed to create database user"}`, http.StatusInternalServerError)
 		return
 	}
 
 	if err := h.mariadbSvc.GrantPrivileges(req.Username, host, dbRecord.Name, req.Privileges); err != nil {
 		h.mariadbSvc.DropUser(req.Username, host)
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"failed to grant privileges"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -414,7 +414,7 @@ func (h *DatabaseHandler) DeleteDatabaseUser(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.mariadbSvc.DropUser(dbUser.Username, dbUser.Host); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"failed to delete database user"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -508,14 +508,14 @@ func (h *DatabaseHandler) UpdateDatabaseUser(w http.ResponseWriter, r *http.Requ
 
 	if req.Password != "" {
 		if err := h.mariadbSvc.ChangePassword(dbUser.Username, dbUser.Host, req.Password); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			http.Error(w, `{"error":"failed to change password"}`, http.StatusInternalServerError)
 			return
 		}
 	}
 
 	if req.Privileges != "" {
 		if err := h.mariadbSvc.GrantPrivileges(dbUser.Username, dbUser.Host, dbRecord.Name, req.Privileges); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			http.Error(w, `{"error":"failed to update privileges"}`, http.StatusInternalServerError)
 			return
 		}
 		if _, err := h.db.Exec("UPDATE database_users SET privileges = ? WHERE id = ?", req.Privileges, userID); err != nil {

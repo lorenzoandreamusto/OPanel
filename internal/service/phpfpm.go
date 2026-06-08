@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"text/template"
+	"time"
 )
 
 type PHPFPMTemplateData struct {
@@ -92,9 +93,12 @@ func (s *PHPFPMService) Reload() error {
 		slog.Warn("phpfpm config test failed (non-fatal)", "output", string(output), "error", err)
 	}
 
-	// Try killall + start (works in Docker without systemd)
-	cmd = exec.Command("killall", binary)
+	// Gracefully stop existing PHP-FPM processes
+	cmd = exec.Command("pkill", "-TERM", "-f", binary)
 	_ = cmd.Run() // ignore error if not running
+
+	// Wait for processes to exit
+	time.Sleep(500 * time.Millisecond)
 
 	// Start PHP-FPM in background
 	cmd = exec.Command(binary)

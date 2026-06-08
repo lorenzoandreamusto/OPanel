@@ -14,12 +14,13 @@ import (
 )
 
 type AuthHandler struct {
-	db     *database.DB
-	secret string
+	db           *database.DB
+	secret       string
+	expiryHours  int
 }
 
-func NewAuthHandler(db *database.DB, secret string) *AuthHandler {
-	return &AuthHandler{db: db, secret: secret}
+func NewAuthHandler(db *database.DB, secret string, expiryHours int) *AuthHandler {
+	return &AuthHandler{db: db, secret: secret, expiryHours: expiryHours}
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +56,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := opaneljwt.GenerateToken(user.ID, user.Username, user.Role, h.secret, 24)
+	token, err := opaneljwt.GenerateToken(user.ID, user.Username, user.Role, h.secret, h.expiryHours)
 	if err != nil {
 		http.Error(w, `{"error":"failed to generate token"}`, http.StatusInternalServerError)
 		return

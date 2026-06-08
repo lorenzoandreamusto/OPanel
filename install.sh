@@ -154,7 +154,7 @@ install_go() {
     fi
 
     log_info "Installing Go..."
-    GO_VERSION="1.23.6"
+    GO_VERSION="1.24.0"
     wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
     tar -C /usr/local -xzf /tmp/go.tar.gz
     rm /tmp/go.tar.gz
@@ -259,11 +259,10 @@ server:
 database:
   path: "$DB_DIR/opanel.db"
 
-mysql:
+mariadb:
+  socket_path: "/var/run/mysqld/mysqld.sock"
   host: "127.0.0.1"
   port: 3306
-  user: "root"
-  password: "$DB_ROOT_PASSWORD"
 
 jwt:
   secret: "$(openssl rand -hex 32)"
@@ -283,7 +282,7 @@ paths:
 
 system:
   opanel_group: "opanel_users"
-  php_version: "8.2"
+  php_version: "8.4"
 EOF
 
     chmod 600 "$CONFIG_DIR/config.yaml"

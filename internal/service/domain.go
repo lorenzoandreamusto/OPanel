@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"opanel/internal/database"
 	"opanel/internal/model"
@@ -27,12 +28,12 @@ type DomainService struct {
 	phpfpm *PHPFPMService
 }
 
-func NewDomainService(db *database.DB) *DomainService {
+func NewDomainService(db *database.DB, templatesDir, nginxConfDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir string) *DomainService {
 	return &DomainService{
 		db:    db,
 		sys:   NewSystemService(),
-		nginx: NewNginxService(NginxTemplateDir, NginxConfigDir),
-		phpfpm: NewPHPFPMService(NginxTemplateDir, "8.4", "/etc/php/8.4/fpm/pool.d", "/run/php"),
+		nginx: NewNginxService(templatesDir, nginxConfDir),
+		phpfpm: NewPHPFPMService(templatesDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir),
 	}
 }
 
@@ -64,7 +65,7 @@ func (s *DomainService) CreateDomain(name string, ownerID int) (*model.Domain, e
 	documentRoot := filepath.Join(domainDir, "httpdocs")
 	logDir := filepath.Join(domainDir, "logs")
 	tmpDir := filepath.Join(domainDir, "tmp")
-	username := "op_" + name
+	username := domainToUsername(name)
 
 	// 5. Create directory structure
 	for _, dir := range []string{domainDir, documentRoot, logDir, tmpDir} {
@@ -182,7 +183,7 @@ func (s *DomainService) DeleteDomain(id int) (*model.Domain, error) {
 		return nil, fmt.Errorf("failed to fetch domain: %w", err)
 	}
 
-	username := "op_" + domain.Name
+	username := domainToUsername(domain.Name)
 
 	// 2. Remove PHP-FPM pool
 	if err := s.phpfpm.RemovePool(domain.Name); err != nil {
@@ -283,6 +284,10 @@ func (s *DomainService) UpdateDomainStatus(id int, status string) (*model.Domain
 	}
 
 	return s.GetDomain(id)
+}
+
+func domainToUsername(name string) string {
+	return "op_" + strings.ReplaceAll(name, ".", "-")
 }
 
 // copyFile copies a file from src to dst

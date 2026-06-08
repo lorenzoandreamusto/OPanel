@@ -19,9 +19,9 @@ type DomainHandler struct {
 	domainService *service.DomainService
 }
 
-func NewDomainHandler(db *database.DB) *DomainHandler {
+func NewDomainHandler(db *database.DB, templatesDir, nginxConfDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir string) *DomainHandler {
 	return &DomainHandler{
-		domainService: service.NewDomainService(db),
+		domainService: service.NewDomainService(db, templatesDir, nginxConfDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir),
 	}
 }
 
@@ -66,9 +66,20 @@ func (h *DomainHandler) GetDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
 	domain, err := h.domainService.GetDomain(id)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
+		return
+	}
+
+	if claims.Role != "admin" && domain.OwnerID != claims.UserID {
+		http.Error(w, `{"error":"domain not found"}`, http.StatusNotFound)
 		return
 	}
 

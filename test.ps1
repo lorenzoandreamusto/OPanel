@@ -477,7 +477,171 @@ $intDbGone = (docker exec opanel mysql -u root -e "SHOW DATABASES LIKE 'integrat
 Test-Case "Database removed from MariaDB after delete" { $intDbGone -notmatch "integration_db" }
 
 # ============================================================
-Write-Host "`n--- 13. CLEANUP ---" -ForegroundColor Yellow
+Write-Host "`n--- 13. ROLE VALIDATION (bugfix tests) ---" -ForegroundColor Yellow
+
+$roleBad1 = Invoke-Api -Method "POST" -Path "/api/users" -Token $TOKEN -Body '{"username":"rolebad1","email":"rb1@test.com","password":"Test123!","role":"superadmin"}'
+Test-Case "Create user with invalid role rejected" { (-not $roleBad1.ok) }
+
+$roleBad2 = Invoke-Api -Method "POST" -Path "/api/users" -Token $TOKEN -Body '{"username":"rolebad2","email":"rb2@test.com","password":"Test123!","role":""}'
+Test-Case "Create user with empty role defaults to user" { $roleBad2.ok -and $roleBad2.data.role -eq "user" }
+if ($roleBad2.ok) { Invoke-Api -Method "DELETE" -Path "/api/users/$($roleBad2.data.id)" -Token $TOKEN | Out-Null }
+
+$roleOk1 = Invoke-Api -Method "POST" -Path "/api/users" -Token $TOKEN -Body '{"username":"roleok1","email":"ro1@test.com","password":"Test123!","role":"admin"}'
+Test-Case "Create user with role=admin succeeds" { $roleOk1.ok -and $roleOk1.data.role -eq "admin" }
+if ($roleOk1.ok) { Invoke-Api -Method "DELETE" -Path "/api/users/$($roleOk1.data.id)" -Token $TOKEN | Out-Null }
+
+# Update with invalid role
+$ruTemp = Invoke-Api -Method "POST" -Path "/api/users" -Token $TOKEN -Body '{"username":"roleupdate","email":"ru@test.com","password":"Test123!","role":"user"}'
+$ruId = if ($ruTemp.ok) { $ruTemp.data.id } else { 0 }
+$roleUpBad = Invoke-Api -Method "PUT" -Path "/api/users/$ruId" -Token $TOKEN -Body '{"role":"hacker"}'
+Test-Case "Update user with invalid role rejected" { (-not $roleUpBad.ok) }
+$roleUpOk = Invoke-Api -Method "PUT" -Path "/api/users/$ruId" -Token $TOKEN -Body '{"role":"admin"}'
+Test-Case "Update user with valid role=admin succeeds" { $roleUpOk.ok -and $roleUpOk.data.role -eq "admin" }
+Invoke-Api -Method "DELETE" -Path "/api/users/$ruId" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 14. DOMAIN OWNERSHIP (bugfix tests) ---" -ForegroundColor Yellow
+
+# Create a non-admin user
+$ownerUser = Invoke-Api -Method "POST" -Path "/api/users" -Token $TOKEN -Body '{"username":"owner_test","email":"owner@test.com","password":"Test123!","role":"user"}'
+$ownerId = if ($ownerUser.ok) { $ownerUser.data.id } else { 0 }
+$ownerLogin = Invoke-Api -Method "POST" -Path "/api/auth/login" -Body '{"username":"owner_test","password":"Test123!"}'
+$ownerToken = if ($ownerLogin.ok) { $ownerLogin.data.token } else { "" }
+
+# Admin creates a domain
+$adminDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"admin-owned.com"}'
+$adminDomId = if ($adminDom.ok) { $adminDom.data.id } else { 0 }
+
+# Non-admin user creates a domain
+$ownerDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $ownerToken -Body '{"name":"owner-owned.com"}'
+$ownerDomId = if ($ownerDom.ok) { $ownerDom.data.id } else { 0 }
+
+# Non-admin cannot see admin's domain by ID
+$ownerGetAdmin = Invoke-Api -Path "/api/domains/$adminDomId" -Token $ownerToken
+Test-Case "Non-admin cannot get admin domain by ID" { (-not $ownerGetAdmin.ok) }
+
+# Admin can see all domains
+$adminListAll = Invoke-Api -Path "/api/domains" -Token $TOKEN
+Test-Case "Admin sees all domains" { $adminListAll.ok -and $adminListAll.data.Count -ge 2 }
+
+# Non-admin only sees own domains
+$ownerList = Invoke-Api -Path "/api/domains" -Token $ownerToken
+Test-Case "Non-admin sees only own domains" { $ownerList.ok -and $ownerList.data.Count -eq 1 -and $ownerList.data[0].name -eq "owner-owned.com" }
+
+# Non-admin can get own domain
+$ownerGetOwn = Invoke-Api -Path "/api/domains/$ownerDomId" -Token $ownerToken
+Test-Case "Non-admin can get own domain" { $ownerGetOwn.ok }
+
+# Cleanup
+Invoke-Api -Method "DELETE" -Path "/api/domains/$adminDomId" -Token $TOKEN | Out-Null
+Invoke-Api -Method "DELETE" -Path "/api/domains/$ownerDomId" -Token $TOKEN | Out-Null
+Invoke-Api -Method "DELETE" -Path "/api/users/$ownerId" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 15. USER PASSWORD UPDATE ---" -ForegroundColor Yellow
+
+$pwUser = Invoke-Api -Method "POST" -Path "/api/users" -Token $TOKEN -Body '{"username":"pwtest","email":"pw@test.com","password":"OldPass1!","role":"user"}'
+$pwId = if ($pwUser.ok) { $pwUser.data.id } else { 0 }
+
+# Update password
+$pwUp = Invoke-Api -Method "PUT" -Path "/api/users/$pwId" -Token $TOKEN -Body '{"password":"NewPass2!"}'
+Test-Case "Update user password succeeds" { $pwUp.ok }
+
+# Login with old password should fail
+$pwOldLogin = Invoke-Api -Method "POST" -Path "/api/auth/login" -Body '{"username":"pwtest","password":"OldPass1!"}'
+Test-Case "Login with old password fails" { (-not $pwOldLogin.ok) }
+
+# Login with new password should succeed
+$pwNewLogin = Invoke-Api -Method "POST" -Path "/api/auth/login" -Body '{"username":"pwtest","password":"NewPass2!"}'
+Test-Case "Login with new password succeeds" { $pwNewLogin.ok }
+
+Invoke-Api -Method "DELETE" -Path "/api/users/$pwId" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 16. DATABASE USER EDGE CASES ---" -ForegroundColor Yellow
+
+# Create a temp DB for edge case tests
+$edgeDb = Invoke-Api -Method "POST" -Path "/api/databases" -Token $TOKEN -Body '{"name":"edge_case_db"}'
+$edgeDbId = if ($edgeDb.ok) { $edgeDb.data.id } else { 0 }
+
+# Delete non-existent DB user
+$edgeDel = Invoke-Api -Method "DELETE" -Path "/api/databases/$edgeDbId/users/99999" -Token $TOKEN
+Test-Case "Delete non-existent DB user fails" { (-not $edgeDel.ok) }
+
+# Update non-existent DB user
+$edgeUp = Invoke-Api -Method "PUT" -Path "/api/databases/$edgeDbId/users/99999" -Token $TOKEN -Body '{"password":"x"}'
+Test-Case "Update non-existent DB user fails" { (-not $edgeUp.ok) }
+
+# Create user, update both password and privileges at once
+$edgeUsr = Invoke-Api -Method "POST" -Path "/api/databases/$edgeDbId/users" -Token $TOKEN -Body '{"username":"edge_usr","password":"Edge1!","privileges":"SELECT"}'
+$edgeUsrId = if ($edgeUsr.ok) { $edgeUsr.data.id } else { 0 }
+$edgeBoth = Invoke-Api -Method "PUT" -Path "/api/databases/$edgeDbId/users/$edgeUsrId" -Token $TOKEN -Body '{"password":"EdgeNew2!","privileges":"ALL PRIVILEGES"}'
+Test-Case "Update both password and privileges" { $edgeBoth.ok -and $edgeBoth.data.privileges -eq "ALL PRIVILEGES" }
+
+# Verify new password works
+$edgeLogin = (docker exec opanel mysql -u edge_usr -p'EdgeNew2!' edge_case_db -e "SELECT 1;" 2>&1 | Out-String).Trim()
+Test-Case "DB user login with updated password works" { $edgeLogin -match "1" }
+
+# Update with empty body (neither password nor privileges)
+$edgeEmpty = Invoke-Api -Method "PUT" -Path "/api/databases/$edgeDbId/users/$edgeUsrId" -Token $TOKEN -Body '{}'
+Test-Case "Update with empty body rejected" { (-not $edgeEmpty.ok) }
+
+# Cleanup
+Invoke-Api -Method "DELETE" -Path "/api/databases/$edgeDbId/users/$edgeUsrId" -Token $TOKEN | Out-Null
+Invoke-Api -Method "DELETE" -Path "/api/databases/$edgeDbId" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 17. CONCURRENT REQUESTS ---" -ForegroundColor Yellow
+
+# Fire 5 parallel health checks
+$jobs = @()
+1..5 | ForEach-Object {
+    $jobs += Start-Job -ScriptBlock {
+        param($url)
+        try {
+            $r = Invoke-WebRequest -Uri "$url/api/health" -UseBasicParsing -TimeoutSec 5
+            return $r.StatusCode -eq 200
+        } catch { return $false }
+    } -ArgumentList $BaseUrl
+}
+$jobs | Wait-Job -Timeout 10 | Out-Null
+$results = $jobs | Receive-Job
+$jobs | Remove-Job -Force
+$allOk = ($results | Where-Object { $_ -eq $true }).Count -eq 5
+Test-Case "5 concurrent health checks all succeed" { $allOk }
+
+# ============================================================
+Write-Host "`n--- 18. LARGE PAYLOAD ---" -ForegroundColor Yellow
+
+$bigBody = '{"name":"' + ("a" * 1000) + '.com"}'
+$bigResp = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body $bigBody
+Test-Case "Very long domain name (1000+ chars) rejected" { (-not $bigResp.ok) }
+
+$bigDbBody = '{"name":"' + ("x" * 500) + '"}'
+$bigDbResp = Invoke-Api -Method "POST" -Path "/api/databases" -Token $TOKEN -Body $bigDbBody
+Test-Case "Very long database name (500+ chars) rejected" { (-not $bigDbResp.ok) }
+
+# ============================================================
+Write-Host "`n--- 19. CONFIGURATION CONSISTENCY ---" -ForegroundColor Yellow
+
+# Verify JWT expiry hours from config is respected (token should have exp claim)
+$jwtParts = $TOKEN.Split('.')
+if ($jwtParts.Count -eq 3) {
+    $payload = $jwtParts[1]
+    # Pad base64
+    $mod = $payload.Length % 4
+    if ($mod -ne 0) { $payload += ("=" * (4 - $mod)) }
+    $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($payload))
+    $jwtData = $decoded | ConvertFrom-Json -ErrorAction SilentlyContinue
+    Test-Case "JWT token has exp claim" { $null -ne $jwtData.exp }
+    Test-Case "JWT token has iat claim" { $null -ne $jwtData.iat }
+    Test-Case "JWT token has iss=opanel" { $jwtData.iss -eq "opanel" }
+} else {
+    Test-Case "JWT token format valid" { $false }
+}
+
+# ============================================================
+Write-Host "`n--- 20. CLEANUP ---" -ForegroundColor Yellow
 # Remove any leftover test data
 $cleanupUsers = Invoke-Api -Path "/api/users" -Token $TOKEN
 if ($cleanupUsers.ok) {

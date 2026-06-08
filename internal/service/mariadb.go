@@ -11,17 +11,20 @@ import (
 )
 
 type MariaDBService struct {
-	db *database.DB
+	db         *database.DB
+	socketPath string
+	host       string
+	port       int
 }
 
-func NewMariaDBService(db *database.DB) *MariaDBService {
-	return &MariaDBService{db: db}
+func NewMariaDBService(db *database.DB, socketPath, host string, port int) *MariaDBService {
+	return &MariaDBService{db: db, socketPath: socketPath, host: host, port: port}
 }
 
 // ConnectMariaDB opens a connection to the local MariaDB instance.
 // Uses root with no password by default (Plesk-style setup).
 func (s *MariaDBService) connectMariaDB() (*sql.DB, error) {
-	dsn := "root@unix(/var/run/mysqld/mysqld.sock)/"
+	dsn := fmt.Sprintf("root@unix(%s)/", s.socketPath)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MariaDB: %w", err)
@@ -41,7 +44,7 @@ func (s *MariaDBService) CreateDatabase(name string) error {
 	}
 	defer mdb.Close()
 
-	_, err = mdb.Exec("CREATE DATABASE `" + name + "`")
+	_, err = mdb.Exec("CREATE DATABASE `" + escapeIdentifier(name) + "`")
 	if err != nil {
 		return fmt.Errorf("failed to create MariaDB database: %w", err)
 	}
@@ -58,7 +61,7 @@ func (s *MariaDBService) DropDatabase(name string) error {
 	}
 	defer mdb.Close()
 
-	_, err = mdb.Exec("DROP DATABASE `" + name + "`")
+	_, err = mdb.Exec("DROP DATABASE `" + escapeIdentifier(name) + "`")
 	if err != nil {
 		return fmt.Errorf("failed to drop MariaDB database: %w", err)
 	}
@@ -75,7 +78,7 @@ func (s *MariaDBService) CreateUser(username, host, password string) error {
 	}
 	defer mdb.Close()
 
-	query := fmt.Sprintf("CREATE USER `%s`@`%s` IDENTIFIED BY '%s'", username, host, escapeString(password))
+	query := fmt.Sprintf("CREATE USER `%s`@`%s` IDENTIFIED BY '%s'", escapeIdentifier(username), escapeIdentifier(host), escapeString(password))
 	_, err = mdb.Exec(query)
 	if err != nil {
 		return fmt.Errorf("failed to create MariaDB user: %w", err)
@@ -93,7 +96,7 @@ func (s *MariaDBService) DropUser(username, host string) error {
 	}
 	defer mdb.Close()
 
-	_, err = mdb.Exec("DROP USER `" + username + "`@`" + host + "`")
+	_, err = mdb.Exec("DROP USER `" + escapeIdentifier(username) + "`@`" + escapeIdentifier(host) + "`")
 	if err != nil {
 		return fmt.Errorf("failed to drop MariaDB user: %w", err)
 	}
@@ -110,7 +113,7 @@ func (s *MariaDBService) ChangePassword(username, host, password string) error {
 	}
 	defer mdb.Close()
 
-	query := fmt.Sprintf("ALTER USER `%s`@`%s` IDENTIFIED BY '%s'", username, host, escapeString(password))
+	query := fmt.Sprintf("ALTER USER `%s`@`%s` IDENTIFIED BY '%s'", escapeIdentifier(username), escapeIdentifier(host), escapeString(password))
 	_, err = mdb.Exec(query)
 	if err != nil {
 		return fmt.Errorf("failed to change MariaDB user password: %w", err)
@@ -130,7 +133,7 @@ func (s *MariaDBService) GrantPrivileges(username, host, database, privileges st
 	defer mdb.Close()
 
 	// First revoke all privileges on this database
-	revokeQuery := fmt.Sprintf("REVOKE ALL PRIVILEGES ON `%s`.* FROM `%s`@`%s`", database, username, host)
+	revokeQuery := fmt.Sprintf("REVOKE ALL PRIVILEGES ON `%s`.* FROM `%s`@`%s`", escapeIdentifier(database), escapeIdentifier(username), escapeIdentifier(host))
 	_, err = mdb.Exec(revokeQuery)
 	if err != nil {
 		// Ignore error - user may not have any privileges yet
@@ -141,7 +144,7 @@ func (s *MariaDBService) GrantPrivileges(username, host, database, privileges st
 		privileges = "ALL PRIVILEGES"
 	}
 
-	query := fmt.Sprintf("GRANT %s ON `%s`.* TO `%s`@`%s`", privileges, database, username, host)
+	query := fmt.Sprintf("GRANT %s ON `%s`.* TO `%s`@`%s`", privileges, escapeIdentifier(database), escapeIdentifier(username), escapeIdentifier(host))
 	_, err = mdb.Exec(query)
 	if err != nil {
 		return fmt.Errorf("failed to grant MariaDB privileges: %w", err)
@@ -156,11 +159,16 @@ func (s *MariaDBService) GrantPrivileges(username, host, database, privileges st
 	return nil
 }
 
-// escapeString escapes single quotes for SQL string literals
+// escapeString escapes single quotes and backslashes for SQL string literals
 func escapeString(s string) string {
-	s = replaceAll(s, "'", "''")
 	s = replaceAll(s, "\\", "\\\\")
+	s = replaceAll(s, "'", "''")
 	return s
+}
+
+// escapeIdentifier escapes backticks for SQL identifiers (database names, usernames, etc.)
+func escapeIdentifier(s string) string {
+	return replaceAll(s, "`", "``")
 }
 
 func replaceAll(s, old, new string) string {

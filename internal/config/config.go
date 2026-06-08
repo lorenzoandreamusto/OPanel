@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/viper"
 )
@@ -26,7 +27,8 @@ type DatabaseConfig struct {
 }
 
 type JWTConfig struct {
-	Secret string `mapstructure:"secret"`
+	Secret      string `mapstructure:"secret"`
+	ExpiryHours int    `mapstructure:"expiry_hours"`
 }
 
 type MariaDBConfig struct {
@@ -59,12 +61,13 @@ func Load(path string) (*Config, error) {
 	v := viper.New()
 
 	v.SetDefault("server.host", "0.0.0.0")
-	v.SetDefault("server.port", 8080)
-	v.SetDefault("database.path", "/var/lib/opanel/opanel.db")
+	v.SetDefault("server.port", 8443)
+	v.SetDefault("database.path", "/opt/opanel/db/opanel.db")
 	v.SetDefault("jwt.secret", "change-me-in-production")
+	v.SetDefault("jwt.expiry_hours", 24)
 	v.SetDefault("admin.username", "admin")
-	v.SetDefault("admin.email", "admin@example.com")
-	v.SetDefault("admin.password", "changeme")
+	v.SetDefault("admin.email", "admin@localhost")
+	v.SetDefault("admin.password", "admin")
 	v.SetDefault("paths.vhosts_dir", "/var/www/vhosts")
 	v.SetDefault("paths.templates_dir", "/opt/opanel/templates")
 	v.SetDefault("paths.sshd_config", "/etc/ssh/sshd_config")
@@ -85,7 +88,7 @@ func Load(path string) (*Config, error) {
 			return nil, err
 		}
 		// Config file not found; write defaults
-		if err := os.MkdirAll(path[:len(path)-len("/config.yaml")], 0755); err == nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err == nil {
 			_ = v.WriteConfigAs(path)
 		}
 	}

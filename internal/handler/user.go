@@ -102,6 +102,10 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if req.Role == "" {
 		req.Role = "user"
 	}
+	if req.Role != "admin" && req.Role != "user" {
+		http.Error(w, `{"error":"role must be 'admin' or 'user'"}`, http.StatusBadRequest)
+		return
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -114,7 +118,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		req.Username, req.Email, string(hash), req.Role,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"failed to create user: `+err.Error()+`"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"failed to create user"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -175,6 +179,10 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Role != "" {
 		existing.Role = req.Role
+	}
+	if req.Role != "" && req.Role != "admin" && req.Role != "user" {
+		http.Error(w, `{"error":"role must be 'admin' or 'user'"}`, http.StatusBadRequest)
+		return
 	}
 
 	if req.Password != "" {

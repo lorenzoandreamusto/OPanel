@@ -12,6 +12,7 @@ import (
 
 	"opanel/internal/config"
 	"opanel/internal/database"
+	"opanel/internal/middleware"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -28,11 +29,9 @@ func New(cfg *config.Config, db *database.DB) (*Server, error) {
 		db:  db,
 	}
 
-	mux := s.setupRoutes()
-
 	s.httpServer = &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      mux,
+		Handler:      middleware.Logging(s.setupRoutes().ServeHTTP),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -42,19 +41,25 @@ func New(cfg *config.Config, db *database.DB) (*Server, error) {
 }
 
 func (s *Server) Start() error {
+	errChan := make(chan error, 1)
 	go func() {
 		slog.Info("HTTP server starting", "addr", s.httpServer.Addr)
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("HTTP server failed", "error", err)
-			os.Exit(1)
+			errChan <- err
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
 
-	slog.Info("Shutting down server...")
+	select {
+	case <-quit:
+		slog.Info("Shutting down server...")
+	case err := <-errChan:
+		return fmt.Errorf("server error: %w", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
