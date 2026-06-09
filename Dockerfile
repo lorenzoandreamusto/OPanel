@@ -34,8 +34,23 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     nginx \
     php-fpm \
+    php-mysql \
     mariadb-server \
+    openssh-server \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Configure SSH
+RUN mkdir -p /run/sshd \
+    && sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config \
+    && sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config \
+    && echo "root:opanel" | chpasswd
+
+# Install WP-CLI
+RUN curl -sO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
+    && chmod +x wp-cli.phar \
+    && mv wp-cli.phar /usr/local/bin/wp
 
 # Create required directories
 RUN mkdir -p /run/php /var/run/mysqld /var/www/vhosts /etc/nginx/sites-enabled /var/log/php8.4-fpm
@@ -54,7 +69,7 @@ COPY --from=backend-builder /opt/opanel/static /opt/opanel/static
 COPY --from=backend-builder /app/templates /opt/opanel/templates
 COPY config.example.yaml /etc/opanel/config.yaml
 
-EXPOSE 80 8443
+EXPOSE 22 80 443 8443
 
 # Start script that launches all services
 COPY entrypoint.sh /entrypoint.sh

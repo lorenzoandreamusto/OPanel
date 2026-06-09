@@ -231,12 +231,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api'
 import type { Domain, Database, DatabaseUser } from '@/types'
 import { useToast } from '@/composables/useToast'
 
 const route = useRoute()
+const router = useRouter()
 const toast = useToast()
 
 const domain = ref<Domain | null>(null)
@@ -311,6 +312,11 @@ function openCard(key: string) {
     case 'database':
       loadDatabaseInfo()
       showDBModal.value = true
+      break
+    case 'files':
+      if (domain.value) {
+        router.push({ name: 'file-manager', params: { domain: domain.value.name } })
+      }
       break
     default:
       placeholderTitle.value = managementCards.find(c => c.key === key)?.title ?? key

@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, User, Domain, CreateDomainRequest, Database, DatabaseUser } from '@/types'
+import type { LoginRequest, LoginResponse, User, Domain, CreateDomainRequest, Database, DatabaseUser, Backup, SystemStats, FileInfo } from '@/types'
 
 const BASE_URL = '/api'
 
@@ -140,6 +140,72 @@ class ApiClient {
 
   async deleteDatabaseUser(dbId: number, userId: number): Promise<void> {
     return this.request<void>(`/databases/${dbId}/users/${userId}`, { method: 'DELETE' })
+  }
+
+  // File Manager
+  async listFiles(domain: string, path: string = '/httpdocs'): Promise<FileInfo[]> {
+    return this.request<FileInfo[]>(`/files/${domain}?path=${encodeURIComponent(path)}`)
+  }
+
+  async readFile(domain: string, path: string): Promise<{content: string; path: string}> {
+    return this.request<{content: string; path: string}>(`/files/${domain}/read?path=${encodeURIComponent(path)}`)
+  }
+
+  async writeFile(domain: string, path: string, content: string): Promise<void> {
+    return this.request<void>(`/files/${domain}/write`, {
+      method: 'POST',
+      body: JSON.stringify({ path, content }),
+    })
+  }
+
+  async createDirectory(domain: string, path: string): Promise<void> {
+    return this.request<void>(`/files/${domain}/mkdir`, {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    })
+  }
+
+  async deleteFile(domain: string, path: string): Promise<void> {
+    return this.request<void>(`/files/${domain}?path=${encodeURIComponent(path)}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // Monitoring
+  async getMonitoringStats(): Promise<SystemStats> {
+    return this.request<SystemStats>('/monitoring/stats')
+  }
+
+  // Backups
+  async listBackups(domainId?: number): Promise<Backup[]> {
+    const query = domainId ? `?domain_id=${domainId}` : ''
+    return this.request<Backup[]>(`/backups${query}`)
+  }
+
+  async createBackup(data: {domain_id: number; domain_name: string; name?: string}): Promise<{id: number; name: string}> {
+    return this.request<{id: number; name: string}>('/backups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteBackup(id: number): Promise<void> {
+    return this.request<void>(`/backups/${id}`, { method: 'DELETE' })
+  }
+
+  async restoreBackup(id: number, domainName: string): Promise<void> {
+    return this.request<void>(`/backups/${id}/restore`, {
+      method: 'POST',
+      body: JSON.stringify({ domain_name: domainName }),
+    })
+  }
+
+  // WordPress
+  async installWordPress(data: {domain_id: number; domain_name: string; site_name: string; admin_user: string; admin_pass: string; admin_email: string}): Promise<{id: number}> {
+    return this.request<{id: number}>('/wordpress/install', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
   }
 }
 

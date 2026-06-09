@@ -582,10 +582,10 @@ Test-Case "Database with spaces rejected" { (-not $sp3.ok) }
 
 # Very long names
 $longName = "a" * 300
-$sp4 = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body "{\"name\":\"$longName.com\"}"
+$sp4 = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body ("{""name"":""$longName.com""}")
 Test-Case "Very long domain name rejected" { (-not $sp4.ok) }
 
-$sp5 = Invoke-Api -Method "POST" -Path "/api/databases" -Token $TOKEN -Body "{\"name\":\"$longName\"}"
+$sp5 = Invoke-Api -Method "POST" -Path "/api/databases" -Token $TOKEN -Body ("{""name"":""$longName""}")
 Test-Case "Very long database name rejected" { (-not $sp5.ok) }
 
 # ============================================================
@@ -897,7 +897,220 @@ if ($jwtParts.Count -eq 3) {
 }
 
 # ============================================================
-Write-Host "`n--- 20. CLEANUP ---" -ForegroundColor Yellow
+Write-Host "`n--- 20. FILE MANAGER API ---" -ForegroundColor Yellow
+
+# Create a domain to test file manager against
+$fmDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"fmtest.com"}'
+$fmDid = if ($fmDom.ok) { $fmDom.data.id } else { 0 }
+Test-Case "Create domain for file manager test" { $fmDom.ok }
+
+# List files in httpdocs (should have default index.html)
+$fmList = Invoke-Api -Path "/api/files/fmtest.com?path=/httpdocs" -Token $TOKEN
+Test-Case "List files returns array" { $fmList.ok -and ($fmList.data | Measure-Object).Count -ge 1 }
+
+# Check that index.html exists
+$fmHasIndex = $false
+if ($fmList.ok) {
+    foreach ($f in $fmList.data) {
+        if ($f.name -eq "index.html") { $fmHasIndex = $true; break }
+    }
+}
+Test-Case "Default index.html exists in httpdocs" { $fmHasIndex }
+
+# Read file content
+$fmRead = Invoke-Api -Path "/api/files/fmtest.com/read?path=/httpdocs/index.html" -Token $TOKEN
+Test-Case "Read file returns content" { $fmRead.ok -and $fmRead.data.content -match "Welcome" }
+
+# Create a new file
+$fmWrite = Invoke-Api -Method "POST" -Path "/api/files/fmtest.com/write" -Token $TOKEN -Body '{"path":"/httpdocs/test.txt","content":"Hello from test"}'
+Test-Case "Write file succeeds" { $fmWrite.ok }
+
+# Verify file was created
+$fmRead2 = Invoke-Api -Path "/api/files/fmtest.com/read?path=/httpdocs/test.txt" -Token $TOKEN
+Test-Case "Written file content matches" { $fmRead2.ok -and $fmRead2.data.content -eq "Hello from test" }
+
+# Create directory
+$fmMkdir = Invoke-Api -Method "POST" -Path "/api/files/fmtest.com/mkdir" -Token $TOKEN -Body '{"path":"/httpdocs/newdir"}'
+Test-Case "Create directory succeeds" { $fmMkdir.ok }
+
+# Verify directory exists
+$fmList2 = Invoke-Api -Path "/api/files/fmtest.com?path=/httpdocs" -Token $TOKEN
+$fmHasDir = $false
+if ($fmList2.ok) {
+    foreach ($f in $fmList2.data) {
+        if ($f.name -eq "newdir" -and $f.is_dir) { $fmHasDir = $true; break }
+    }
+}
+Test-Case "Created directory exists" { $fmHasDir }
+
+# Rename file
+$fmRename = Invoke-Api -Method "PUT" -Path "/api/files/fmtest.com/rename" -Token $TOKEN -Body '{"old_path":"/httpdocs/test.txt","new_path":"/httpdocs/renamed.txt"}'
+Test-Case "Rename file succeeds" { $fmRename.ok }
+
+# Verify renamed file
+$fmRead3 = Invoke-Api -Path "/api/files/fmtest.com/read?path=/httpdocs/renamed.txt" -Token $TOKEN
+Test-Case "Renamed file readable" { $fmRead3.ok -and $fmRead3.data.content -eq "Hello from test" }
+
+# Path traversal attempt (should fail)
+$fmPt = Invoke-Api -Path "/api/files/fmtest.com/read?path=/etc/passwd" -Token $TOKEN
+Test-Case "Path traversal blocked" { (-not $fmPt.ok) }
+
+# Path traversal with ../
+$fmPt2 = Invoke-Api -Path "/api/files/fmtest.com/read?path=/httpdocs/../../etc/passwd" -Token $TOKEN
+Test-Case "Path traversal with ../ blocked" { (-not $fmPt2.ok) }
+
+# List root httpdocs
+$fmRoot = Invoke-Api -Path "/api/files/fmtest.com?path=/httpdocs/newdir" -Token $TOKEN
+Test-Case "List empty directory returns empty" { $fmRoot.ok -and ($fmRoot.data | Measure-Object).Count -eq 0 }
+
+# Non-existent domain
+$fm404 = Invoke-Api -Path "/api/files/nonexistent.com?path=/" -Token $TOKEN
+Test-Case "Non-existent domain returns error" { (-not $fm404.ok) }
+
+# Delete file
+$fmDel = Invoke-Api -Method "DELETE" -Path "/api/files/fmtest.com?path=/httpdocs/renamed.txt" -Token $TOKEN
+Test-Case "Delete file succeeds" { $fmDel.ok }
+
+# Delete directory
+$fmDelDir = Invoke-Api -Method "DELETE" -Path "/api/files/fmtest.com?path=/httpdocs/newdir" -Token $TOKEN
+Test-Case "Delete directory succeeds" { $fmDelDir.ok }
+
+# Cleanup domain
+Invoke-Api -Method "DELETE" -Path "/api/domains/$fmDid" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 21. MONITORING API ---" -ForegroundColor Yellow
+
+# Get system stats (REST endpoint)
+$monStats = Invoke-Api -Path "/api/monitoring/stats" -Token $TOKEN
+Test-Case "Monitoring stats returns data" { $monStats.ok }
+
+# Verify CPU field exists
+Test-Case "Monitoring has CPU field" { $monStats.ok -and $null -ne $monStats.data.cpu }
+
+# Verify Memory fields
+Test-Case "Monitoring has memory.total" { $monStats.ok -and $monStats.data.memory.total -gt 0 }
+Test-Case "Monitoring has memory.used" { $monStats.ok -and $monStats.data.memory.used -gt 0 }
+Test-Case "Monitoring has memory.percent" { $monStats.ok -and $monStats.data.memory.percent -ge 0 }
+
+# Verify Disk fields
+Test-Case "Monitoring has disk.total" { $monStats.ok -and $monStats.data.disk.total -gt 0 }
+Test-Case "Monitoring has disk.percent" { $monStats.ok -and $monStats.data.disk.percent -ge 0 }
+
+# Verify Load fields
+Test-Case "Monitoring has load_avg" { $monStats.ok -and $null -ne $monStats.data.load_avg }
+
+# Verify CPU is a number
+Test-Case "CPU is a valid number" { $monStats.ok -and $monStats.data.cpu -ge 0 -and $monStats.data.cpu -le 100 }
+
+# Verify Memory percent is reasonable
+Test-Case "Memory percent is valid" { $monStats.ok -and $monStats.data.memory.percent -ge 0 -and $monStats.data.memory.percent -le 100 }
+
+# ============================================================
+Write-Host "`n--- 22. BACKUP API ---" -ForegroundColor Yellow
+
+# Create a domain for backup tests
+$bkDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"bktest.com"}'
+$bkDid = if ($bkDom.ok) { $bkDom.data.id } else { 0 }
+Test-Case "Create domain for backup test" { $bkDom.ok }
+
+# Create a test file in the domain
+Invoke-Api -Method "POST" -Path "/api/files/bktest.com/write" -Token $TOKEN -Body '{"path":"/httpdocs/backup-test.txt","content":"backup content here"}' | Out-Null
+
+# List backups (should be empty)
+$bkList = Invoke-Api -Path "/api/backups?domain_id=$bkDid" -Token $TOKEN
+Test-Case "List backups returns array" { $bkList.ok }
+
+# Create backup
+$bkCreate = Invoke-Api -Method "POST" -Path "/api/backups" -Token $TOKEN -Body ("{""domain_id"":$bkDid,""domain_name"":""bktest.com"",""name"":""test-backup""}")
+Test-Case "Create backup succeeds" { $bkCreate.ok -and $bkCreate.data.name -eq "test-backup" }
+$bkId = if ($bkCreate.ok) { $bkCreate.data.id } else { 0 }
+
+# List backups (should have one)
+$bkList2 = Invoke-Api -Path "/api/backups?domain_id=$bkDid" -Token $TOKEN
+Test-Case "Backup appears in list" { $bkList2.ok -and ($bkList2.data | Measure-Object).Count -ge 1 }
+
+# Verify backup has size
+Test-Case "Backup has size > 0" { $bkCreate.ok -and $bkCreate.data.size -gt 0 }
+
+# Download backup (should return file)
+$bkDownload = Invoke-WebRequest -Uri "http://localhost:8443/api/backups/$bkId/download" -Headers @{"Authorization"="Bearer $TOKEN"} -UseBasicParsing -ErrorAction SilentlyContinue
+Test-Case "Download backup returns content" { $null -ne $bkDownload -and $bkDownload.StatusCode -eq 200 }
+
+# Delete backup
+$bkDel = Invoke-Api -Method "DELETE" -Path "/api/backups/$bkId" -Token $TOKEN
+Test-Case "Delete backup succeeds" { $bkDel.ok }
+
+# Verify backup is gone
+$bkList3 = Invoke-Api -Path "/api/backups?domain_id=$bkDid" -Token $TOKEN
+Test-Case "Backup removed from list" { $bkList3.ok -and ($bkList3.data | Measure-Object).Count -eq 0 }
+
+# Cleanup
+Invoke-Api -Method "DELETE" -Path "/api/domains/$bkDid" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 23. WORDPRESS INSTALLER API ---" -ForegroundColor Yellow
+
+# Create a domain for WordPress test
+$wpDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"wptest.com"}'
+$wpDid = if ($wpDom.ok) { $wpDom.data.id } else { 0 }
+Test-Case "Create domain for WordPress test" { $wpDom.ok }
+
+# Install WordPress (this may take a while due to download)
+$wpInstall = Invoke-Api -Method "POST" -Path "/api/wordpress/install" -Token $TOKEN -Body ("{""domain_id"":$wpDid,""domain_name"":""wptest.com"",""site_name"":""Test Site"",""admin_user"":""admin"",""admin_pass"":""WpTest123!"",""admin_email"":""test@test.com""}")
+Test-Case "WordPress install endpoint responds" { $wpInstall.ok -or $wpInstall.status -ge 400 }
+
+# If install succeeded, verify wp-config.php was created
+if ($wpInstall.ok) {
+    $wpConfig = docker exec opanel cat /var/www/vhosts/wptest.com/httpdocs/wp-config.php 2>&1
+    Test-Case "wp-config.php created" { $wpConfig -match "DB_NAME" }
+    
+    # Verify WordPress files exist
+    $wpFiles = docker exec opanel ls /var/www/vhosts/wptest.com/httpdocs/ 2>&1
+    Test-Case "WordPress files extracted" { $wpFiles -match "wp-config.php" }
+}
+
+# Cleanup
+Invoke-Api -Method "DELETE" -Path "/api/domains/$wpDid" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 24. WEBSOCKET ENDPOINTS (existence check) ---" -ForegroundColor Yellow
+
+# Verify monitoring WebSocket endpoint exists (will fail without proper WS upgrade)
+$wsMon = Invoke-Api -Path "/api/monitoring/ws" -Token $TOKEN
+# WebSocket endpoint should return an error (not 404) since it expects upgrade
+Test-Case "Monitoring WebSocket endpoint exists" { $wsMon.status -ne 404 }
+
+# Verify terminal WebSocket endpoint exists
+$wsTerm = Invoke-Api -Path "/api/terminal/ws" -Token $TOKEN
+Test-Case "Terminal WebSocket endpoint exists" { $wsTerm.status -ne 404 }
+
+# ============================================================
+Write-Host "`n--- 25. FILE MANAGER EDGE CASES ---" -ForegroundColor Yellow
+
+# Create domain for edge cases
+$fmEdge = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"fmedge.com"}'
+$fmEdgeDid = if ($fmEdge.ok) { $fmEdge.data.id } else { 0 }
+
+# Write and then read back
+Invoke-Api -Method "POST" -Path "/api/files/fmedge.com/write" -Token $TOKEN -Body '{"path":"/httpdocs/edge.txt","content":"edge case"}' | Out-Null
+$fmEdgeRead = Invoke-Api -Path "/api/files/fmedge.com/read?path=/httpdocs/edge.txt" -Token $TOKEN
+Test-Case "Write and read back works" { $fmEdgeRead.ok -and $fmEdgeRead.data.content -eq "edge case" }
+
+# Empty path for list
+$fmEmpty = Invoke-Api -Path "/api/files/fmedge.com" -Token $TOKEN
+Test-Case "List with no path param works" { $fmEmpty.ok }
+
+# Write to nested path (should auto-create dirs)
+Invoke-Api -Method "POST" -Path "/api/files/fmedge.com/write" -Token $TOKEN -Body '{"path":"/httpdocs/sub/deep/file.txt","content":"nested"}' | Out-Null
+$fmNested = Invoke-Api -Path "/api/files/fmedge.com/read?path=/httpdocs/sub/deep/file.txt" -Token $TOKEN
+Test-Case "Nested path write creates directories" { $fmNested.ok -and $fmNested.data.content -eq "nested" }
+
+# Cleanup
+Invoke-Api -Method "DELETE" -Path "/api/domains/$fmEdgeDid" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 26. CLEANUP (all test data) ---" -ForegroundColor Yellow
 # Remove any leftover test data
 $cleanupUsers = Invoke-Api -Path "/api/users" -Token $TOKEN
 if ($cleanupUsers.ok) {

@@ -59,3 +59,53 @@ export interface LoginResponse {
 export interface ApiError {
   error: string
 }
+
+export interface Backup {
+  id: number
+  name: string
+  domain_id: number
+  size: number
+  status: string
+  created_at: string
+}
+
+export interface SystemStats {
+  cpu: number
+  memory: {
+    total: number
+    used: number
+    free: number
+    available: number
+    percent: number
+  }
+  disk: {
+    total: number
+    used: number
+    free: number
+    percent: number
+  }
+  load_avg: {
+    load1: number
+    load5: number
+    load15: number
+  }
+  timestamp: number
+}
+
+export interface FileInfo {
+  name: string
+  size: number
+  is_dir: boolean
+  mode: string
+  mod_time: string
+  path: string
+}
+
+export interface WordPressInstall {
+  id: number
+  domain_id: number
+  site_name: string
+  admin_user: string
+  status: string
+  created_at: string
+}

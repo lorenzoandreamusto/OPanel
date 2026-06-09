@@ -89,6 +89,7 @@ func (s *PHPFPMService) RemovePool(domain string) error {
 // Reload sends SIGUSR2 to PHP-FPM master to gracefully reload config
 func (s *PHPFPMService) Reload() error {
 	binary := filepath.Join("/usr/sbin", fmt.Sprintf("php-fpm%s", s.PHPVersion))
+	pidFile := "/var/run/php/php8.4-fpm.pid"
 
 	// Test config first
 	cmd := exec.Command(binary, "-t")
@@ -97,27 +98,37 @@ func (s *PHPFPMService) Reload() error {
 		slog.Warn("phpfpm config test failed (non-fatal)", "output", string(output), "error", err)
 	}
 
-	// Try graceful reload: send SIGUSR2 to master process
-	reloadCmd := exec.Command("sh", "-c", fmt.Sprintf("pkill -USR2 -f 'php-fpm: master process' 2>/dev/null"))
-	reloadOutput, reloadErr := reloadCmd.CombinedOutput()
-	if reloadErr == nil && len(strings.TrimSpace(string(reloadOutput))) == 0 {
-		slog.Info("Reloaded phpfpm via SIGUSR2", "version", s.PHPVersion)
-		return nil
-	}
-	slog.Warn("phpfpm SIGUSR2 failed, trying restart", "output", string(reloadOutput), "error", reloadErr)
-
-	// Fallback: kill and restart via sh -c (avoids zombie processes from Go child)
-	restartScript := fmt.Sprintf(
-		"pkill -TERM -f 'php-fpm: master' 2>/dev/null; sleep 0.5; nohup %s --nodaemonize >/dev/null 2>&1 &",
-		binary,
-	)
-	restartCmd := exec.Command("sh", "-c", restartScript)
-	restartOutput, restartErr := restartCmd.CombinedOutput()
-	if restartErr != nil {
-		slog.Warn("phpfpm restart failed (non-fatal)", "output", string(restartOutput), "error", restartErr)
+	// Try graceful reload via PID file
+	if pidData, readErr := os.ReadFile(pidFile); readErr == nil {
+		pid := strings.TrimSpace(string(pidData))
+		reloadCmd := exec.Command("kill", "-USR2", pid)
+		reloadOutput, reloadErr := reloadCmd.CombinedOutput()
+		if reloadErr == nil {
+			slog.Info("Reloaded phpfpm via SIGUSR2", "version", s.PHPVersion, "pid", pid)
+			return nil
+		}
+		slog.Warn("phpfpm SIGUSR2 failed", "pid", pid, "output", string(reloadOutput), "error", reloadErr)
+	} else {
+		slog.Warn("phpfpm PID file not found", "path", pidFile, "error", readErr)
 	}
 
-	slog.Info("Reloaded phpfpm (restart fallback)", "version", s.PHPVersion)
+	// Fallback: kill old master and start new one detached
+	if pidData, readErr := os.ReadFile(pidFile); readErr == nil {
+		pid := strings.TrimSpace(string(pidData))
+		exec.Command("kill", "-TERM", pid).Run()
+	}
+
+	startCmd := exec.Command("setsid", binary, "--allow-to-run-as-root", "--nodaemonize")
+	startCmd.Stdout = nil
+	startCmd.Stderr = nil
+	startErr := startCmd.Start()
+	if startErr != nil {
+		slog.Warn("phpfpm restart failed (non-fatal)", "error", startErr)
+	} else {
+		startCmd.Process.Release()
+		slog.Info("Restarted phpfpm (fallback)", "version", s.PHPVersion)
+	}
+
 	return nil
 }
 

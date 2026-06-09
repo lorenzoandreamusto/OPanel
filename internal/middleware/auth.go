@@ -14,19 +14,26 @@ const ClaimsKey contextKey = "claims"
 
 func Auth(secret string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		token := ""
+
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				token = parts[1]
+			}
+		}
+
+		if token == "" {
+			token = r.URL.Query().Get("token")
+		}
+
+		if token == "" {
 			http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			http.Error(w, `{"error":"invalid authorization header format"}`, http.StatusUnauthorized)
-			return
-		}
-
-		claims, err := opaneljwt.ValidateToken(parts[1], secret)
+		claims, err := opaneljwt.ValidateToken(token, secret)
 		if err != nil {
 			http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 			return

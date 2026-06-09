@@ -25,7 +25,7 @@ done
 
 # Start PHP-FPM
 echo "Starting PHP-FPM..."
-php-fpm8.4 -D
+php-fpm8.4 --allow-to-run-as-root -D
 
 # Wait for PHP-FPM socket to be created
 echo "Waiting for PHP-FPM socket..."
@@ -40,6 +40,10 @@ done
 # Start Nginx
 echo "Starting Nginx..."
 nginx
+
+# Start SSH
+echo "Starting SSH..."
+/usr/sbin/sshd
 
 # Start OPanel
 echo "Starting OPanel..."

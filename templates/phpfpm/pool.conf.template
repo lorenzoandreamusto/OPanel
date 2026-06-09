@@ -7,8 +7,8 @@ group = {{.Username}}
 
 ; Listen on UNIX socket
 listen = {{.SocketPath}}
-listen.owner = {{.Username}}
-listen.group = {{.Username}}
+listen.owner = www-data
+listen.group = www-data
 
 ; Process Manager settings
 pm = dynamic

@@ -21,6 +21,15 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	domainHandler := handler.NewDomainHandler(s.db, s.cfg.Paths.TemplatesDir, s.cfg.Paths.NginxConfDir, s.cfg.System.PHPVersion, s.cfg.Paths.PHPFPMPoolDir, s.cfg.Paths.PHPFPMSocketDir, mariadbSvc)
 	databaseHandler := handler.NewDatabaseHandler(s.db, mariadbSvc)
 
+	// Sprint 6 services
+	fileHandler := handler.NewFileHandler(service.NewFileManagerService(s.cfg.Paths.VhostsDir))
+	monitorHandler := handler.NewMonitorHandler(service.NewMonitoringService())
+	terminalHandler := handler.NewTerminalHandler(service.NewTerminalService())
+
+	backupsDir := filepath.Join(filepath.Dir(s.cfg.Paths.VhostsDir), "backups")
+	backupHandler := handler.NewBackupHandler(service.NewBackupService(s.db.DB, backupsDir, s.cfg.Paths.VhostsDir))
+	wordpressHandler := handler.NewWordPressHandler(service.NewWordPressService(s.db.DB, mariadbSvc, s.cfg.Paths.VhostsDir))
+
 	// Public routes
 	mux.HandleFunc("GET /api/health", handler.HealthCheck)
 	mux.HandleFunc("POST /api/auth/login", authHandler.Login)
@@ -52,6 +61,33 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	mux.HandleFunc("POST /api/databases/{id}/users", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.CreateDatabaseUser))
 	mux.HandleFunc("DELETE /api/databases/{id}/users/{userId}", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.DeleteDatabaseUser))
 	mux.HandleFunc("PUT /api/databases/{id}/users/{userId}", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.UpdateDatabaseUser))
+
+	// File Manager (authenticated)
+	mux.HandleFunc("GET /api/files/{domain}", middleware.Auth(s.cfg.JWT.Secret, fileHandler.ListFiles))
+	mux.HandleFunc("GET /api/files/{domain}/read", middleware.Auth(s.cfg.JWT.Secret, fileHandler.ReadFile))
+	mux.HandleFunc("POST /api/files/{domain}/write", middleware.Auth(s.cfg.JWT.Secret, fileHandler.WriteFile))
+	mux.HandleFunc("POST /api/files/{domain}/mkdir", middleware.Auth(s.cfg.JWT.Secret, fileHandler.CreateDir))
+	mux.HandleFunc("DELETE /api/files/{domain}", middleware.Auth(s.cfg.JWT.Secret, fileHandler.Delete))
+	mux.HandleFunc("PUT /api/files/{domain}/rename", middleware.Auth(s.cfg.JWT.Secret, fileHandler.Rename))
+	mux.HandleFunc("POST /api/files/{domain}/upload", middleware.Auth(s.cfg.JWT.Secret, fileHandler.Upload))
+	mux.HandleFunc("GET /api/files/{domain}/download", middleware.Auth(s.cfg.JWT.Secret, fileHandler.Download))
+
+	// Monitoring (authenticated)
+	mux.HandleFunc("GET /api/monitoring/stats", middleware.Auth(s.cfg.JWT.Secret, monitorHandler.GetStats))
+	mux.HandleFunc("GET /api/monitoring/ws", monitorHandler.WebSocketStats)
+
+	// Terminal (authenticated, admin only)
+	mux.HandleFunc("GET /api/terminal/ws", middleware.Auth(s.cfg.JWT.Secret, middleware.RequireAdmin(terminalHandler.Connect)))
+
+	// Backups (authenticated)
+	mux.HandleFunc("GET /api/backups", middleware.Auth(s.cfg.JWT.Secret, backupHandler.ListBackups))
+	mux.HandleFunc("POST /api/backups", middleware.Auth(s.cfg.JWT.Secret, backupHandler.CreateBackup))
+	mux.HandleFunc("GET /api/backups/{id}/download", middleware.Auth(s.cfg.JWT.Secret, backupHandler.DownloadBackup))
+	mux.HandleFunc("DELETE /api/backups/{id}", middleware.Auth(s.cfg.JWT.Secret, backupHandler.DeleteBackup))
+	mux.HandleFunc("POST /api/backups/{id}/restore", middleware.Auth(s.cfg.JWT.Secret, backupHandler.RestoreBackup))
+
+	// WordPress (authenticated)
+	mux.HandleFunc("POST /api/wordpress/install", middleware.Auth(s.cfg.JWT.Secret, wordpressHandler.Install))
 
 	// SPA static file serving
 	spaHandler := s.setupSPA()

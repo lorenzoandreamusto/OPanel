@@ -55,6 +55,24 @@ var migrations = []string{
 	`ALTER TABLE domains ADD COLUMN hosting_type TEXT NOT NULL DEFAULT 'php' CHECK(hosting_type IN ('static', 'php'))`,
 	`ALTER TABLE domains ADD COLUMN ssl_enabled INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE domains ADD COLUMN auto_db INTEGER NOT NULL DEFAULT 0`,
+	`CREATE TABLE IF NOT EXISTS backups (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		domain_id INTEGER NOT NULL,
+		size INTEGER DEFAULT 0,
+		status TEXT DEFAULT 'pending',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (domain_id) REFERENCES domains(id)
+	)`,
+	`CREATE TABLE IF NOT EXISTS wordpress_installs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		domain_id INTEGER NOT NULL,
+		site_name TEXT NOT NULL,
+		admin_user TEXT NOT NULL,
+		status TEXT DEFAULT 'pending',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (domain_id) REFERENCES domains(id)
+	)`,
 }
 
 func (d *DB) RunMigrations() error {

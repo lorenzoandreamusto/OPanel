@@ -43,6 +43,38 @@ const router = createRouter({
           meta: { requiresAdmin: true },
         },
         {
+          path: 'files',
+          name: 'files',
+          component: () => import('@/views/FileManagerView.vue'),
+        },
+        {
+          path: 'files/:domain',
+          name: 'file-manager',
+          component: () => import('@/views/FileManagerView.vue'),
+          props: true,
+        },
+        {
+          path: 'monitoring',
+          name: 'monitoring',
+          component: () => import('@/views/MonitoringView.vue'),
+        },
+        {
+          path: 'terminal',
+          name: 'terminal',
+          component: () => import('@/views/TerminalView.vue'),
+          meta: { requiresAdmin: true },
+        },
+        {
+          path: 'backups',
+          name: 'backups',
+          component: () => import('@/views/BackupsView.vue'),
+        },
+        {
+          path: 'installer',
+          name: 'installer',
+          component: () => import('@/views/InstallerView.vue'),
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('@/views/SettingsView.vue'),
