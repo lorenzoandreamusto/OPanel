@@ -26,6 +26,12 @@ const router = createRouter({
           component: () => import('@/views/DomainsView.vue'),
         },
         {
+          path: 'domains/:id',
+          name: 'domain-detail',
+          component: () => import('@/views/DomainDetailView.vue'),
+          props: true,
+        },
+        {
           path: 'databases',
           name: 'databases',
           component: () => import('@/views/DatabasesView.vue'),

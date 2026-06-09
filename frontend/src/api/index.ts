@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, User, Domain, Database, DatabaseUser } from '@/types'
+import type { LoginRequest, LoginResponse, User, Domain, CreateDomainRequest, Database, DatabaseUser } from '@/types'
 
 const BASE_URL = '/api'
 
@@ -82,14 +82,14 @@ class ApiClient {
     return this.request<Domain>(`/domains/${id}`)
   }
 
-  async createDomain(data: { name: string }): Promise<Domain> {
+  async createDomain(data: CreateDomainRequest): Promise<Domain> {
     return this.request<Domain>('/domains', {
       method: 'POST',
       body: JSON.stringify(data),
     })
   }
 
-  async updateDomain(id: number, data: { status?: string }): Promise<Domain> {
+  async updateDomain(id: number, data: { status?: string; php_version?: string; hosting_type?: string; ssl_enabled?: boolean; auto_db?: boolean }): Promise<Domain> {
     return this.request<Domain>(`/domains/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),

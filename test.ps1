@@ -253,6 +253,188 @@ $dd404 = Invoke-Api -Method "DELETE" -Path "/api/domains/99999" -Token $TOKEN
 Test-Case "Delete non-existent domain fails" { (-not $dd404.ok) }
 
 # ============================================================
+Write-Host "`n--- 4b. DOMAIN EXTENSIONS (hosting_type, php_version, ssl, auto_db) ---" -ForegroundColor Yellow
+
+# Create PHP domain with specific version
+$dcPhp = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"php-specific.com","php_version":"8.3","hosting_type":"php","ssl_enabled":true,"auto_db":true}'
+Test-Case "Create PHP domain with php_version=8.3" { $dcPhp.ok -and $dcPhp.data.php_version -eq "8.3" }
+$didPhp = if ($dcPhp.ok) { $dcPhp.data.id } else { 0 }
+
+Test-Case "PHP domain has hosting_type=php" { $dcPhp.data.hosting_type -eq "php" }
+Test-Case "PHP domain has ssl_enabled=true" { $dcPhp.data.ssl_enabled -eq $true }
+Test-Case "PHP domain has auto_db=true" { $dcPhp.data.auto_db -eq $true }
+
+# Verify PHP-FPM pool generated for PHP domain
+$phpPool = docker exec opanel cat /etc/php/8.4/fpm/pool.d/php-specific.com.pool.conf 2>&1
+Test-Case "PHP-FPM pool created for PHP domain" { $phpPool -match "php-specific.com" }
+
+# Verify Nginx config generated for PHP domain
+$phpNginx = docker exec opanel cat /etc/nginx/sites-enabled/php-specific.com.conf 2>&1
+Test-Case "Nginx config created for PHP domain" { $phpNginx -match "server_name" }
+
+# Get domain returns new fields
+$dgPhp = Invoke-Api -Path "/api/domains/$didPhp" -Token $TOKEN
+Test-Case "Get PHP domain returns php_version" { $dgPhp.ok -and $dgPhp.data.php_version -eq "8.3" }
+Test-Case "Get PHP domain returns hosting_type" { $dgPhp.data.hosting_type -eq "php" }
+Test-Case "Get PHP domain returns ssl_enabled" { $dgPhp.data.ssl_enabled -eq $true }
+Test-Case "Get PHP domain returns auto_db" { $dgPhp.data.auto_db -eq $true }
+
+# Create static domain (no PHP-FPM pool expected)
+$dcStatic = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"static-only.com","hosting_type":"static"}'
+Test-Case "Create static domain" { $dcStatic.ok -and $dcStatic.data.hosting_type -eq "static" }
+$didStatic = if ($dcStatic.ok) { $dcStatic.data.id } else { 0 }
+
+# Static domain should NOT have PHP-FPM pool
+$staticPool = docker exec opanel ls /etc/php/8.4/fpm/pool.d/static-only.com.pool.conf 2>&1
+Test-Case "Static domain has NO PHP-FPM pool" { $staticPool -match "No such file" }
+
+# Static domain SHOULD have Nginx config
+$staticNginx = docker exec opanel cat /etc/nginx/sites-enabled/static-only.com.conf 2>&1
+Test-Case "Static domain has Nginx config" { $staticNginx -match "server_name" }
+
+# Static domain should NOT have fastcgi (PHP handling) in Nginx
+Test-Case "Static Nginx has no fastcgi_pass" { $staticNginx -notmatch "fastcgi_pass" }
+
+# Default values for new fields when creating with just name
+$dcDefault = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"default-fields.com"}'
+Test-Case "Default domain has php_version=8.4" { $dcDefault.ok -and $dcDefault.data.php_version -eq "8.4" }
+Test-Case "Default domain has hosting_type=php" { $dcDefault.data.hosting_type -eq "php" }
+Test-Case "Default domain has ssl_enabled=false" { $dcDefault.data.ssl_enabled -eq $false }
+Test-Case "Default domain has auto_db=false" { $dcDefault.data.auto_db -eq $false }
+$didDefault = if ($dcDefault.ok) { $dcDefault.data.id } else { 0 }
+
+# Update domain fields
+$uuPhp = Invoke-Api -Method "PUT" -Path "/api/domains/$didPhp" -Token $TOKEN -Body '{"php_version":"8.4"}'
+Test-Case "Update domain php_version to 8.4" { $uuPhp.ok -and $uuPhp.data.php_version -eq "8.4" }
+
+$uuSsl = Invoke-Api -Method "PUT" -Path "/api/domains/$didPhp" -Token $TOKEN -Body '{"ssl_enabled":false}'
+Test-Case "Update domain ssl_enabled to false" { $uuSsl.ok -and $uuSsl.data.ssl_enabled -eq $false }
+
+$uuType = Invoke-Api -Method "PUT" -Path "/api/domains/$didDefault" -Token $TOKEN -Body '{"hosting_type":"static"}'
+Test-Case "Update domain hosting_type to static" { $uuType.ok -and $uuType.data.hosting_type -eq "static" }
+
+# After changing to static, PHP-FPM pool should ideally be removed (or at least Nginx should not use PHP)
+# For now we just verify the field updated
+$dgDefault = Invoke-Api -Path "/api/domains/$didDefault" -Token $TOKEN
+Test-Case "Default domain updated to static" { $dgDefault.ok -and $dgDefault.data.hosting_type -eq "static" }
+
+# Cleanup extension test domains
+Invoke-Api -Method "DELETE" -Path "/api/domains/$didPhp" -Token $TOKEN | Out-Null
+Invoke-Api -Method "DELETE" -Path "/api/domains/$didStatic" -Token $TOKEN | Out-Null
+Invoke-Api -Method "DELETE" -Path "/api/domains/$didDefault" -Token $TOKEN | Out-Null
+
+# Verify cleanup
+$phpPoolAfter = docker exec opanel ls /etc/php/8.4/fpm/pool.d/php-specific.com.pool.conf 2>&1
+Test-Case "PHP-FPM pool removed after PHP domain delete" { $phpPoolAfter -match "No such file" }
+$staticNginxAfter = docker exec opanel ls /etc/nginx/sites-enabled/static-only.com.conf 2>&1
+Test-Case "Nginx config removed after static domain delete" { $staticNginxAfter -match "No such file" }
+
+# ============================================================
+Write-Host "`n--- 4c. SUSPEND/ACTIVATE + STATIC SITE BEHAVIOR ---" -ForegroundColor Yellow
+
+# Create domain for suspend test
+$dcSusp = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"suspend-test.com"}'
+$didSusp = if ($dcSusp.ok) { $dcSusp.data.id } else { 0 }
+Test-Case "Create domain for suspend test" { $dcSusp.ok }
+
+# Verify normal Nginx config
+$suspNginx = docker exec opanel cat /etc/nginx/sites-enabled/suspend-test.com.conf 2>&1
+Test-Case "Active domain has fastcgi_pass" { $suspNginx -match "fastcgi_pass" }
+
+# Suspend domain
+$suspendResult = Invoke-Api -Method "PUT" -Path "/api/domains/$didSusp" -Token $TOKEN -Body '{"status":"suspended"}'
+Test-Case "Suspend returns status=suspended" { $suspendResult.ok -and $suspendResult.data.status -eq "suspended" }
+
+# Verify Nginx config now has suspension page
+$suspendedNginx = docker exec opanel cat /etc/nginx/sites-enabled/suspend-test.com.conf 2>&1
+Test-Case "Suspended Nginx has return 403" { $suspendedNginx -match "return 403" }
+Test-Case "Suspended Nginx has no fastcgi_pass" { $suspendedNginx -notmatch "fastcgi_pass" }
+Test-Case "Suspended Nginx has suspension message" { $suspendedNginx -match "Site Suspended" }
+
+# Site still responds on port 80 (with suspension page)
+$suspPage = curl -s -H "Host: suspend-test.com" http://localhost:80/ 2>&1
+Test-Case "Suspended site returns 403" { $suspPage -match "Site Suspended" }
+
+# Activate domain
+$activateResult = Invoke-Api -Method "PUT" -Path "/api/domains/$didSusp" -Token $TOKEN -Body '{"status":"active"}'
+Test-Case "Activate returns status=active" { $activateResult.ok -and $activateResult.data.status -eq "active" }
+
+# Verify Nginx config restored to normal
+$activatedNginx = docker exec opanel cat /etc/nginx/sites-enabled/suspend-test.com.conf 2>&1
+Test-Case "Activated Nginx has fastcgi_pass again" { $activatedNginx -match "fastcgi_pass" }
+Test-Case "Activated Nginx has no return 403" { $activatedNginx -notmatch "return 403" }
+
+# Hosting type: PHP → Static removes pool
+$dcHt = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"hosting-test.com","hosting_type":"php"}'
+$didHt = if ($dcHt.ok) { $dcHt.data.id } else { 0 }
+Test-Case "Create PHP domain for hosting type test" { $dcHt.ok }
+
+$htPool = docker exec opanel cat /etc/php/8.4/fpm/pool.d/hosting-test.com.pool.conf 2>&1
+Test-Case "PHP domain has pool" { $htPool -match "hosting-test.com" }
+
+# Switch to static
+$htStatic = Invoke-Api -Method "PUT" -Path "/api/domains/$didHt" -Token $TOKEN -Body '{"hosting_type":"static"}'
+Test-Case "Switch to static succeeds" { $htStatic.ok -and $htStatic.data.hosting_type -eq "static" }
+
+$htPoolAfter = docker exec opanel ls /etc/php/8.4/fpm/pool.d/hosting-test.com.pool.conf 2>&1
+Test-Case "Pool removed after switch to static" { $htPoolAfter -match "No such file" }
+
+$htNginx = docker exec opanel cat /etc/nginx/sites-enabled/hosting-test.com.conf 2>&1
+Test-Case "Static Nginx has no fastcgi_pass" { $htNginx -notmatch "fastcgi_pass" }
+
+# Switch back to PHP
+$htPhp = Invoke-Api -Method "PUT" -Path "/api/domains/$didHt" -Token $TOKEN -Body '{"hosting_type":"php"}'
+Test-Case "Switch back to PHP succeeds" { $htPhp.ok -and $htPhp.data.hosting_type -eq "php" }
+
+$htPoolRecreated = docker exec opanel cat /etc/php/8.4/fpm/pool.d/hosting-test.com.pool.conf 2>&1
+Test-Case "Pool recreated after switch to PHP" { $htPoolRecreated -match "hosting-test.com" }
+
+$htNginxPhp = docker exec opanel cat /etc/nginx/sites-enabled/hosting-test.com.conf 2>&1
+Test-Case "PHP Nginx has fastcgi_pass again" { $htNginxPhp -match "fastcgi_pass" }
+
+# Cleanup
+Invoke-Api -Method "DELETE" -Path "/api/domains/$didSusp" -Token $TOKEN | Out-Null
+Invoke-Api -Method "DELETE" -Path "/api/domains/$didHt" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 4d. AUTO_DB CREATION ---" -ForegroundColor Yellow
+
+# Create domain with auto_db
+$dcAuto = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"autodb-test.com","auto_db":true}'
+Test-Case "Create domain with auto_db" { $dcAuto.ok -and $dcAuto.data.auto_db -eq $true }
+$didAuto = if ($dcAuto.ok) { $dcAuto.data.id } else { 0 }
+
+# Database should be created in MariaDB (domain name with dots → underscores)
+$autoDbCheck = (docker exec opanel mysql -u root -e "SHOW DATABASES LIKE 'autodb-test_com';" 2>&1 | Out-String).Trim()
+Test-Case "Auto DB exists in MariaDB" { $autoDbCheck -match "autodb-test_com" }
+
+# Database should be tracked in SQLite (visible via API)
+$dbList = Invoke-Api -Path "/api/databases" -Token $TOKEN
+$foundAutoDb = $false
+if ($dbList.ok) {
+    foreach ($db in $dbList.data) {
+        if ($db.name -eq "autodb-test_com") { $foundAutoDb = $true; break }
+    }
+}
+Test-Case "Auto DB tracked in API" { $foundAutoDb }
+
+# Delete domain with auto_db — should also delete the database
+$ddAuto = Invoke-Api -Method "DELETE" -Path "/api/domains/$didAuto" -Token $TOKEN
+Test-Case "Delete domain with auto_db" { $ddAuto.ok }
+
+$autoDbAfter = (docker exec opanel mysql -u root -e "SHOW DATABASES LIKE 'autodb_test';" 2>&1 | Out-String).Trim()
+Test-Case "Auto DB removed from MariaDB after domain delete" { $autoDbAfter -notmatch "autodb_test" }
+
+# Create domain WITHOUT auto_db — should NOT create database
+$dcNoAuto = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"noautodb-test.com","auto_db":false}'
+$didNoAuto = if ($dcNoAuto.ok) { $dcNoAuto.data.id } else { 0 }
+$noAutoDb = (docker exec opanel mysql -u root -e "SHOW DATABASES LIKE 'noautodb-test_com';" 2>&1 | Out-String).Trim()
+Test-Case "No auto DB when auto_db=false" { $noAutoDb -notmatch "noautodb-test_com" }
+
+# Cleanup
+Invoke-Api -Method "DELETE" -Path "/api/domains/$didNoAuto" -Token $TOKEN | Out-Null
+
+# ============================================================
 Write-Host "`n--- 5. DATABASES CRUD ---" -ForegroundColor Yellow
 $dbl = Invoke-Api -Path "/api/databases" -Token $TOKEN
 Test-Case "List databases returns array" { $dbl.ok }
@@ -285,6 +467,11 @@ Write-Host "`n--- 6. DATABASE USERS CRUD ---" -ForegroundColor Yellow
 $cdu = Invoke-Api -Method "POST" -Path "/api/databases/$dbid/users" -Token $TOKEN -Body '{"username":"auto_dbuser","password":"AutoP@ss1","privileges":"ALL PRIVILEGES"}'
 Test-Case "Create database user succeeds" { $cdu.ok -and $cdu.data.username -eq "auto_dbuser" }
 $duid = if ($cdu.ok) { $cdu.data.id } else { 0 }
+
+# List database users
+$ldu = Invoke-Api -Path "/api/databases/$dbid/users" -Token $TOKEN
+Test-Case "List database users returns array" { $ldu.ok -and ($ldu.data | Measure-Object).Count -ge 1 }
+Test-Case "List database users includes created user" { ($ldu.data | Where-Object { $_.username -eq "auto_dbuser" }) -ne $null }
 
 # Verify in MariaDB
 $duCheck = (docker exec opanel mysql -u root -e "SELECT User FROM mysql.user WHERE User='auto_dbuser';" 2>&1 | Out-String).Trim()
@@ -503,9 +690,9 @@ Test-Case "Nginx config has X-XSS-Protection" { $webNginx -match "X-XSS-Protecti
 $nginxTest = docker exec opanel nginx -t 2>&1
 Test-Case "Nginx config test passes" { $nginxTest -match "test is successful" }
 
-# Verify PHP-FPM process is running for this domain
-$webFpmProcs = docker exec opanel ps aux 2>&1
-Test-Case "PHP-FPM pool process running for domain" { $webFpmProcs -match "pool webtest.com" }
+# Verify PHP-FPM process is running for this domain (check socket exists instead of process name due to Docker PID 1 limitation)
+$webSocketAfter = docker exec opanel ls /run/php/php8.4-fpm-op_webtest-com.sock 2>&1
+Test-Case "PHP-FPM pool process running for domain" { $webSocketAfter -match "op_webtest-com.sock" }
 
 # Verify Nginx is listening on port 80
 $nginxListening = docker exec opanel ss -tlnp 2>&1

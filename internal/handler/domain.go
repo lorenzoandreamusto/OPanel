@@ -19,9 +19,9 @@ type DomainHandler struct {
 	domainService *service.DomainService
 }
 
-func NewDomainHandler(db *database.DB, templatesDir, nginxConfDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir string) *DomainHandler {
+func NewDomainHandler(db *database.DB, templatesDir, nginxConfDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir string, mariadb *service.MariaDBService) *DomainHandler {
 	return &DomainHandler{
-		domainService: service.NewDomainService(db, templatesDir, nginxConfDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir),
+		domainService: service.NewDomainService(db, templatesDir, nginxConfDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir, mariadb),
 	}
 }
 
@@ -125,7 +125,7 @@ func (h *DomainHandler) CreateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domain, err := h.domainService.CreateDomain(req.Name, claims.UserID)
+	domain, err := h.domainService.CreateDomain(&req, claims.UserID)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -188,17 +188,29 @@ func (h *DomainHandler) UpdateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Status == "" {
-		http.Error(w, `{"error":"status is required"}`, http.StatusBadRequest)
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
 
-	domain, err := h.domainService.UpdateDomainStatus(id, req.Status)
+	domain, err := h.domainService.GetDomain(id)
+	if err != nil {
+		http.Error(w, `{"error":"domain not found"}`, http.StatusNotFound)
+		return
+	}
+
+	if claims.Role != "admin" && domain.OwnerID != claims.UserID {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	updated, err := h.domainService.UpdateDomain(id, &req)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(domain)
+	json.NewEncoder(w).Encode(updated)
 }

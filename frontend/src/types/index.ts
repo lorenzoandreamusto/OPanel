@@ -14,8 +14,20 @@ export interface Domain {
   status: 'active' | 'suspended' | 'pending'
   document_root: string
   owner_id: number
+  php_version: string
+  hosting_type: 'static' | 'php'
+  ssl_enabled: boolean
+  auto_db: boolean
   created_at: string
   updated_at: string
+}
+
+export interface CreateDomainRequest {
+  name: string
+  php_version?: string
+  hosting_type?: 'static' | 'php'
+  ssl_enabled?: boolean
+  auto_db?: boolean
 }
 
 export interface Database {

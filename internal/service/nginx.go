@@ -31,13 +31,25 @@ func NewNginxService(templateDir, configDir string) *NginxService {
 	}
 }
 
+// nginxTemplateName returns the template filename based on status and hosting type
+func nginxTemplateName(status, hostingType string) string {
+	if status == "suspended" {
+		return "suspended.conf.template"
+	}
+	if hostingType == "static" {
+		return "static.conf.template"
+	}
+	return "default.conf.template"
+}
+
 // GenerateConfig generates an Nginx virtual host config for a domain
-func (n *NginxService) GenerateConfig(data NginxTemplateData) error {
-	templatePath := filepath.Join(n.TemplateDir, "nginx", "default.conf.template")
+func (n *NginxService) GenerateConfig(data NginxTemplateData, status string, hostingType string) error {
+	tmplName := nginxTemplateName(status, hostingType)
+	templatePath := filepath.Join(n.TemplateDir, "nginx", tmplName)
 
 	tmpl, err := template.ParseFiles(templatePath)
 	if err != nil {
-		return fmt.Errorf("failed to parse nginx template: %w", err)
+		return fmt.Errorf("failed to parse nginx template %s: %w", tmplName, err)
 	}
 
 	outputPath := filepath.Join(n.ConfigDir, fmt.Sprintf("%s.conf", data.Domain))
@@ -53,7 +65,7 @@ func (n *NginxService) GenerateConfig(data NginxTemplateData) error {
 		return fmt.Errorf("failed to execute nginx template: %w", err)
 	}
 
-	slog.Info("Generated nginx config", "domain", data.Domain, "path", outputPath)
+	slog.Info("Generated nginx config", "domain", data.Domain, "template", tmplName, "path", outputPath)
 	return nil
 }
 

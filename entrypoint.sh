@@ -25,7 +25,7 @@ done
 
 # Start PHP-FPM
 echo "Starting PHP-FPM..."
-php-fpm8.4 --nodaemonize &
+php-fpm8.4 -D
 
 # Wait for PHP-FPM socket to be created
 echo "Waiting for PHP-FPM socket..."

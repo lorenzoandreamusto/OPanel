@@ -21,10 +21,10 @@ type DatabaseHandler struct {
 	mariadbSvc *service.MariaDBService
 }
 
-func NewDatabaseHandler(db *database.DB, socketPath, host string, port int) *DatabaseHandler {
+func NewDatabaseHandler(db *database.DB, mariadbSvc *service.MariaDBService) *DatabaseHandler {
 	return &DatabaseHandler{
 		db:         db,
-		mariadbSvc: service.NewMariaDBService(db, socketPath, host, port),
+		mariadbSvc: mariadbSvc,
 	}
 }
 
@@ -244,6 +244,75 @@ func (h *DatabaseHandler) DeleteDatabase(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(model.MessageResponse{Message: "database deleted"})
+}
+
+func (h *DatabaseHandler) ListDatabaseUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	dbIDStr := r.PathValue("id")
+	if dbIDStr == "" {
+		http.Error(w, `{"error":"database id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	dbID, err := strconv.Atoi(dbIDStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid database id"}`, http.StatusBadRequest)
+		return
+	}
+
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var dbRecord model.Database
+	err = h.db.QueryRow(
+		"SELECT id, name, owner_id FROM databases WHERE id = ?", dbID,
+	).Scan(&dbRecord.ID, &dbRecord.Name, &dbRecord.OwnerID)
+	if err == sql.ErrNoRows {
+		http.Error(w, `{"error":"database not found"}`, http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, `{"error":"failed to fetch database"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if claims.Role != "admin" && dbRecord.OwnerID != claims.UserID {
+		http.Error(w, `{"error":"database not found"}`, http.StatusNotFound)
+		return
+	}
+
+	rows, err := h.db.Query(
+		"SELECT id, username, host, database_id, privileges, created_at FROM database_users WHERE database_id = ? ORDER BY username", dbID,
+	)
+	if err != nil {
+		http.Error(w, `{"error":"failed to list database users"}`, http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var users []model.DatabaseUser
+	for rows.Next() {
+		var u model.DatabaseUser
+		if err := rows.Scan(&u.ID, &u.Username, &u.Host, &u.DatabaseID, &u.Privileges, &u.CreatedAt); err != nil {
+			http.Error(w, `{"error":"failed to scan database user"}`, http.StatusInternalServerError)
+			return
+		}
+		users = append(users, u)
+	}
+
+	if users == nil {
+		users = []model.DatabaseUser{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
 }
 
 func (h *DatabaseHandler) CreateDatabaseUser(w http.ResponseWriter, r *http.Request) {

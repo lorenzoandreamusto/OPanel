@@ -51,6 +51,10 @@ var migrations = []string{
 		FOREIGN KEY (database_id) REFERENCES databases(id) ON DELETE CASCADE,
 		UNIQUE(username, host, database_id)
 	)`,
+	`ALTER TABLE domains ADD COLUMN php_version TEXT NOT NULL DEFAULT '8.4'`,
+	`ALTER TABLE domains ADD COLUMN hosting_type TEXT NOT NULL DEFAULT 'php' CHECK(hosting_type IN ('static', 'php'))`,
+	`ALTER TABLE domains ADD COLUMN ssl_enabled INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE domains ADD COLUMN auto_db INTEGER NOT NULL DEFAULT 0`,
 }
 
 func (d *DB) RunMigrations() error {

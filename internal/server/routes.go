@@ -9,6 +9,7 @@ import (
 
 	"opanel/internal/handler"
 	"opanel/internal/middleware"
+	"opanel/internal/service"
 )
 
 func (s *Server) setupRoutes() *http.ServeMux {
@@ -16,8 +17,9 @@ func (s *Server) setupRoutes() *http.ServeMux {
 
 	authHandler := handler.NewAuthHandler(s.db, s.cfg.JWT.Secret, s.cfg.JWT.ExpiryHours)
 	userHandler := handler.NewUserHandler(s.db)
-	domainHandler := handler.NewDomainHandler(s.db, s.cfg.Paths.TemplatesDir, s.cfg.Paths.NginxConfDir, s.cfg.System.PHPVersion, s.cfg.Paths.PHPFPMPoolDir, s.cfg.Paths.PHPFPMSocketDir)
-	databaseHandler := handler.NewDatabaseHandler(s.db, s.cfg.MariaDB.SocketPath, s.cfg.MariaDB.Host, s.cfg.MariaDB.Port)
+	mariadbSvc := service.NewMariaDBService(s.db, s.cfg.MariaDB.SocketPath, s.cfg.MariaDB.Host, s.cfg.MariaDB.Port)
+	domainHandler := handler.NewDomainHandler(s.db, s.cfg.Paths.TemplatesDir, s.cfg.Paths.NginxConfDir, s.cfg.System.PHPVersion, s.cfg.Paths.PHPFPMPoolDir, s.cfg.Paths.PHPFPMSocketDir, mariadbSvc)
+	databaseHandler := handler.NewDatabaseHandler(s.db, mariadbSvc)
 
 	// Public routes
 	mux.HandleFunc("GET /api/health", handler.HealthCheck)
@@ -46,6 +48,7 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/databases/{id}", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.GetDatabase))
 	mux.HandleFunc("POST /api/databases", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.CreateDatabase))
 	mux.HandleFunc("DELETE /api/databases/{id}", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.DeleteDatabase))
+	mux.HandleFunc("GET /api/databases/{id}/users", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.ListDatabaseUsers))
 	mux.HandleFunc("POST /api/databases/{id}/users", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.CreateDatabaseUser))
 	mux.HandleFunc("DELETE /api/databases/{id}/users/{userId}", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.DeleteDatabaseUser))
 	mux.HandleFunc("PUT /api/databases/{id}/users/{userId}", middleware.Auth(s.cfg.JWT.Secret, databaseHandler.UpdateDatabaseUser))

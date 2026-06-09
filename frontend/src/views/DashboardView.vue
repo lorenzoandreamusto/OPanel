@@ -65,10 +65,11 @@
           No domains yet. Create your first domain to get started.
         </div>
         <div v-else class="space-y-3">
-          <div
+          <router-link
             v-for="domain in domains.slice(0, 5)"
             :key="domain.id"
-            class="flex items-center justify-between p-3 bg-opanel-bg rounded-lg"
+            :to="`/domains/${domain.id}`"
+            class="flex items-center justify-between p-3 bg-opanel-bg rounded-lg hover:bg-opanel-bg/80 transition-colors cursor-pointer"
           >
             <div class="flex items-center gap-3">
               <div class="w-8 h-8 rounded-lg bg-opanel-primary/10 flex items-center justify-center">
@@ -79,7 +80,7 @@
               <span class="text-sm font-medium text-white">{{ domain.name }}</span>
             </div>
             <span :class="statusClass(domain.status)">{{ domain.status }}</span>
-          </div>
+          </router-link>
         </div>
       </div>
 

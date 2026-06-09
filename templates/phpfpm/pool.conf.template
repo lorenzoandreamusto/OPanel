@@ -20,8 +20,6 @@ pm.max_requests = 500
 
 ; Timeouts
 request_terminate_timeout = 300s
-request_slowlog_timeout = 10s
-slowlog = /var/log/php{{.PHPVersion}}-fpm/{{.Domain}}-slow.log
 
 ; Limits
 php_admin_value[memory_limit] = 128M
@@ -31,7 +29,6 @@ php_admin_value[max_execution_time] = 300
 php_admin_value[max_input_time] = 300
 
 ; Paths
-php_admin_value[error_log] = /var/log/php{{.PHPVersion}}-fpm/{{.Domain}}-error.log
 php_admin_value[upload_tmp_dir] = /var/www/vhosts/{{.Domain}}/tmp
 php_admin_value[session.save_path] = /var/www/vhosts/{{.Domain}}/tmp
 

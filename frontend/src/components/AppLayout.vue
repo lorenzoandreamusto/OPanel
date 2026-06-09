@@ -7,10 +7,12 @@
         <router-view />
       </main>
     </div>
+    <ToastContainer />
   </div>
 </template>
 
 <script setup lang="ts">
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
+import ToastContainer from './ToastContainer.vue'
 </script>
