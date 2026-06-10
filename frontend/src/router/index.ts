@@ -37,6 +37,16 @@ const router = createRouter({
           component: () => import('@/views/DatabasesView.vue'),
         },
         {
+          path: 'dns',
+          name: 'dns',
+          component: () => import('@/views/DNSView.vue'),
+        },
+        {
+          path: 'mail',
+          name: 'mail',
+          component: () => import('@/views/MailView.vue'),
+        },
+        {
           path: 'users',
           name: 'users',
           component: () => import('@/views/UsersView.vue'),

@@ -244,6 +244,23 @@
               />
             </button>
           </div>
+
+          <div class="flex items-center justify-between p-3 rounded-lg border border-opanel-border">
+            <div>
+              <div class="text-sm font-medium text-white">Enable Mail</div>
+              <div class="text-xs text-opanel-text-muted">Create mail domain with MX, SPF, DKIM DNS records</div>
+            </div>
+            <button
+              @click="form.mail_enabled = !form.mail_enabled"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+              :class="form.mail_enabled ? 'bg-opanel-primary' : 'bg-opanel-border'"
+            >
+              <span
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                :class="form.mail_enabled ? 'translate-x-6' : 'translate-x-1'"
+              />
+            </button>
+          </div>
         </div>
 
         <!-- Tab 4: Review -->
@@ -278,6 +295,12 @@
               <span class="text-sm text-opanel-text-muted">Auto Database</span>
               <span :class="form.auto_db ? 'text-green-400 text-sm' : 'text-opanel-text-muted text-sm'">
                 {{ form.auto_db ? 'Yes' : 'No' }}
+              </span>
+            </div>
+            <div class="flex justify-between py-2">
+              <span class="text-sm text-opanel-text-muted">Mail</span>
+              <span :class="form.mail_enabled ? 'text-green-400 text-sm' : 'text-opanel-text-muted text-sm'">
+                {{ form.mail_enabled ? 'Enabled (MX + SPF + DKIM)' : 'Disabled' }}
               </span>
             </div>
           </div>
@@ -321,7 +344,7 @@
         <h3 class="text-lg font-semibold text-white mb-2">Delete Domain</h3>
         <p class="text-opanel-text-muted mb-6">
           Are you sure you want to delete <strong class="text-white">{{ domainToDelete.name }}</strong>?
-          This will remove all associated files, Nginx config, and PHP-FPM pool.
+          This will remove all associated files, Nginx config, PHP-FPM pool, DNS zone, and mail domain.
         </p>
         <div class="flex justify-end gap-3">
           <button @click="domainToDelete = null" class="btn-ghost">Cancel</button>
@@ -366,6 +389,7 @@ interface DomainForm {
   document_root: string
   ssl_enabled: boolean
   auto_db: boolean
+  mail_enabled: boolean
 }
 
 const defaultForm = (): DomainForm => ({
@@ -375,6 +399,7 @@ const defaultForm = (): DomainForm => ({
   document_root: '/var/www/vhosts//httpdocs',
   ssl_enabled: false,
   auto_db: false,
+  mail_enabled: false,
 })
 
 const form = ref<DomainForm>(defaultForm())
@@ -454,6 +479,7 @@ async function createDomain() {
     hosting_type: form.value.hosting_type,
     ssl_enabled: form.value.ssl_enabled,
     auto_db: form.value.auto_db,
+    mail_enabled: form.value.mail_enabled,
   }
 
   try {

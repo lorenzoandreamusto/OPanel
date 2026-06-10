@@ -39,6 +39,15 @@ RUN apt-get update && apt-get install -y \
     openssh-server \
     curl \
     unzip \
+    bind9 \
+    bind9utils \
+    postfix \
+    postfix-mysql \
+    dovecot-core \
+    dovecot-lmtpd \
+    dovecot-mysql \
+    rspamd \
+    openssl \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure SSH
@@ -53,7 +62,9 @@ RUN curl -sO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cl
     && mv wp-cli.phar /usr/local/bin/wp
 
 # Create required directories
-RUN mkdir -p /run/php /var/run/mysqld /var/www/vhosts /etc/nginx/sites-enabled /var/log/php8.4-fpm
+RUN mkdir -p /run/php /var/run/mysqld /var/www/vhosts /etc/nginx/sites-enabled /var/log/php8.4-fpm \
+    /etc/bind/zones /var/vmail /var/lib/rspamd/dkim /run/dovecot \
+    /var/log/dovecot /var/log/rspamd
 
 # Remove default nginx site config and install OPanel default catch-all
 RUN rm -f /etc/nginx/sites-enabled/default
@@ -61,6 +72,12 @@ COPY templates/nginx/default-server.conf /etc/nginx/sites-enabled/00-default.con
 
 # Set permissions for MariaDB runtime
 RUN chown mysql:mysql /var/run/mysqld
+
+# Create vmail user for Dovecot/Postfix (uid=8 is Debian default vmail)
+RUN groupadd -g 5000 vmail 2>/dev/null || true \
+    && useradd -u 5000 -g vmail -d /var/vmail -s /usr/sbin/nologin vmail 2>/dev/null || true \
+    && mkdir -p /var/vmail && chown vmail:vmail /var/vmail && chmod 770 /var/vmail \
+    && mkdir -p /var/lib/rspamd/dkim && chown _rspamd:_rspamd /var/lib/rspamd/dkim 2>/dev/null || true
 
 COPY --from=backend-builder /opt/opanel/bin/opaneld /opt/opanel/bin/opaneld
 RUN mkdir -p /opt/opanel/db /opt/opanel/templates /opt/opanel/static /etc/opanel

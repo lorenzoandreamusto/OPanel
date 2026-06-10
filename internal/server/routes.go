@@ -89,6 +89,30 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	// WordPress (authenticated)
 	mux.HandleFunc("POST /api/wordpress/install", middleware.Auth(s.cfg.JWT.Secret, wordpressHandler.Install))
 
+	// DNS (authenticated)
+	dnsHandler := handler.NewDNSHandler(s.db)
+	mux.HandleFunc("GET /api/dns/zones", middleware.Auth(s.cfg.JWT.Secret, dnsHandler.ListZones))
+	mux.HandleFunc("GET /api/dns/zones/{id}", middleware.Auth(s.cfg.JWT.Secret, dnsHandler.GetZone))
+	mux.HandleFunc("POST /api/dns/zones", middleware.Auth(s.cfg.JWT.Secret, dnsHandler.CreateZone))
+	mux.HandleFunc("DELETE /api/dns/zones/{id}", middleware.Auth(s.cfg.JWT.Secret, middleware.RequireAdmin(dnsHandler.DeleteZone)))
+	mux.HandleFunc("GET /api/dns/zones/{id}/records", middleware.Auth(s.cfg.JWT.Secret, dnsHandler.ListRecords))
+	mux.HandleFunc("POST /api/dns/zones/{id}/records", middleware.Auth(s.cfg.JWT.Secret, dnsHandler.CreateRecord))
+	mux.HandleFunc("PUT /api/dns/records/{recordId}", middleware.Auth(s.cfg.JWT.Secret, dnsHandler.UpdateRecord))
+	mux.HandleFunc("DELETE /api/dns/records/{recordId}", middleware.Auth(s.cfg.JWT.Secret, middleware.RequireAdmin(dnsHandler.DeleteRecord)))
+
+	// Mail (authenticated)
+	mailHandler := handler.NewMailHandler(s.db)
+	mux.HandleFunc("GET /api/mail/domains", middleware.Auth(s.cfg.JWT.Secret, mailHandler.ListMailDomains))
+	mux.HandleFunc("GET /api/mail/domains/{id}", middleware.Auth(s.cfg.JWT.Secret, mailHandler.GetMailDomain))
+	mux.HandleFunc("POST /api/mail/domains", middleware.Auth(s.cfg.JWT.Secret, mailHandler.CreateMailDomain))
+	mux.HandleFunc("DELETE /api/mail/domains/{id}", middleware.Auth(s.cfg.JWT.Secret, middleware.RequireAdmin(mailHandler.DeleteMailDomain)))
+	mux.HandleFunc("GET /api/mail/domains/{id}/accounts", middleware.Auth(s.cfg.JWT.Secret, mailHandler.ListMailAccounts))
+	mux.HandleFunc("POST /api/mail/domains/{id}/accounts", middleware.Auth(s.cfg.JWT.Secret, mailHandler.CreateMailAccount))
+	mux.HandleFunc("PUT /api/mail/accounts/{accountId}", middleware.Auth(s.cfg.JWT.Secret, mailHandler.UpdateMailAccount))
+	mux.HandleFunc("DELETE /api/mail/accounts/{accountId}", middleware.Auth(s.cfg.JWT.Secret, middleware.RequireAdmin(mailHandler.DeleteMailAccount)))
+	mux.HandleFunc("GET /api/mail/autoconfig/{domain}", mailHandler.GetAutoconfig)
+	mux.HandleFunc("GET /api/mail/dkim/{domain}", middleware.Auth(s.cfg.JWT.Secret, mailHandler.GetDKIMRecord))
+
 	// SPA static file serving
 	spaHandler := s.setupSPA()
 	if spaHandler != nil {

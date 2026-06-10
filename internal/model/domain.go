@@ -23,6 +23,7 @@ type CreateDomainRequest struct {
 	HostingType string `json:"hosting_type,omitempty"`
 	SSLEnabled  bool   `json:"ssl_enabled,omitempty"`
 	AutoDB      bool   `json:"auto_db,omitempty"`
+	MailEnabled bool   `json:"mail_enabled,omitempty"`
 }
 
 type UpdateDomainRequest struct {

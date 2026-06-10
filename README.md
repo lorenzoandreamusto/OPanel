@@ -184,5 +184,5 @@ admin:
 
 Vedi [STATUS.md](STATUS.md) per lo stato attuale del progetto e la roadmap completa.
 
-**Sprint completati:** 4/7
-**Prossimo:** Sprint 5 - Posta e DNS
+**Sprint completati:** 5/7
+**Prossimo:** Sprint 6 - Strumenti avanzati

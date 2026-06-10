@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, User, Domain, CreateDomainRequest, Database, DatabaseUser, Backup, SystemStats, FileInfo } from '@/types'
+import type { LoginRequest, LoginResponse, User, Domain, CreateDomainRequest, Database, DatabaseUser, Backup, SystemStats, FileInfo, DNSZone, DNSRecord, CreateDNSZoneRequest, CreateDNSRecordRequest, UpdateDNSRecordRequest, MailDomain, MailAccount, CreateMailDomainRequest, CreateMailAccountRequest, UpdateMailAccountRequest, MailAutoconfig, DKIMRecord } from '@/types'
 
 const BASE_URL = '/api'
 
@@ -206,6 +206,102 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
     })
+  }
+
+  // DNS Zones
+  async listDNSZones(): Promise<DNSZone[]> {
+    return this.request<DNSZone[]>('/dns/zones')
+  }
+
+  async getDNSZone(id: number): Promise<DNSZone> {
+    return this.request<DNSZone>(`/dns/zones/${id}`)
+  }
+
+  async createDNSZone(data: CreateDNSZoneRequest): Promise<DNSZone> {
+    return this.request<DNSZone>('/dns/zones', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteDNSZone(id: number): Promise<void> {
+    return this.request<void>(`/dns/zones/${id}`, { method: 'DELETE' })
+  }
+
+  // DNS Records
+  async listDNSRecords(zoneId: number): Promise<DNSRecord[]> {
+    return this.request<DNSRecord[]>(`/dns/zones/${zoneId}/records`)
+  }
+
+  async createDNSRecord(zoneId: number, data: CreateDNSRecordRequest): Promise<DNSRecord> {
+    return this.request<DNSRecord>(`/dns/zones/${zoneId}/records`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateDNSRecord(recordId: number, data: UpdateDNSRecordRequest): Promise<DNSRecord> {
+    return this.request<DNSRecord>(`/dns/records/${recordId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteDNSRecord(recordId: number): Promise<void> {
+    return this.request<void>(`/dns/records/${recordId}`, { method: 'DELETE' })
+  }
+
+  // Mail Domains
+  async listMailDomains(): Promise<MailDomain[]> {
+    return this.request<MailDomain[]>('/mail/domains')
+  }
+
+  async getMailDomain(id: number): Promise<MailDomain> {
+    return this.request<MailDomain>(`/mail/domains/${id}`)
+  }
+
+  async createMailDomain(data: CreateMailDomainRequest): Promise<MailDomain> {
+    return this.request<MailDomain>('/mail/domains', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteMailDomain(id: number): Promise<void> {
+    return this.request<void>(`/mail/domains/${id}`, { method: 'DELETE' })
+  }
+
+  // Mail Accounts
+  async listMailAccounts(domainId: number): Promise<MailAccount[]> {
+    return this.request<MailAccount[]>(`/mail/domains/${domainId}/accounts`)
+  }
+
+  async createMailAccount(domainId: number, data: CreateMailAccountRequest): Promise<MailAccount> {
+    return this.request<MailAccount>(`/mail/domains/${domainId}/accounts`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateMailAccount(accountId: number, data: UpdateMailAccountRequest): Promise<MailAccount> {
+    return this.request<MailAccount>(`/mail/accounts/${accountId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteMailAccount(accountId: number): Promise<void> {
+    return this.request<void>(`/mail/accounts/${accountId}`, { method: 'DELETE' })
+  }
+
+  // Mail Autoconfig
+  async getMailAutoconfig(domain: string): Promise<MailAutoconfig> {
+    return this.request<MailAutoconfig>(`/mail/autoconfig/${domain}`)
+  }
+
+  // DKIM
+  async getDKIMRecord(domain: string): Promise<DKIMRecord> {
+    return this.request<DKIMRecord>(`/mail/dkim/${domain}`)
   }
 }
 

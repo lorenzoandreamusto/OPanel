@@ -29,6 +29,8 @@ type DomainService struct {
 	nginx    *NginxService
 	phpfpm   *PHPFPMService
 	mariadb  *MariaDBService
+	dns      *DNSService
+	mail     *MailService
 }
 
 func NewDomainService(db *database.DB, templatesDir, nginxConfDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir string, mariadb *MariaDBService) *DomainService {
@@ -38,6 +40,8 @@ func NewDomainService(db *database.DB, templatesDir, nginxConfDir, phpVersion, p
 		nginx:   NewNginxService(templatesDir, nginxConfDir),
 		phpfpm:  NewPHPFPMService(templatesDir, phpVersion, phpFPMPoolDir, phpFPMSocketDir),
 		mariadb: mariadb,
+		dns:     NewDNSService(db),
+		mail:    NewMailService(db),
 	}
 }
 
@@ -232,7 +236,30 @@ func (s *DomainService) CreateDomain(req *model.CreateDomainRequest, ownerID int
 		}
 	}
 
-	// 17. Return created domain
+	// 17. Auto-create DNS zone with default records
+	serverIP := ipAddress
+	if serverIP == "" || serverIP == "0.0.0.0" {
+		serverIP = GetServerIP()
+	}
+	dnsZone, err := s.dns.CreateZone(&model.CreateDNSZoneRequest{DomainID: int(id)})
+	if err != nil {
+		slog.Warn("Failed to auto-create DNS zone (non-fatal)", "error", err, "domain", name)
+	}
+
+	// 18. Auto-create mail domain + mail DNS records if requested
+	if req.MailEnabled && dnsZone != nil {
+		mailDomain, err := s.mail.CreateMailDomain(&model.CreateMailDomainRequest{DomainID: int(id)})
+		if err != nil {
+			slog.Warn("Failed to auto-create mail domain (non-fatal)", "error", err, "domain", name)
+		} else {
+			// Get DKIM public key for DNS record
+			dkimRecord, _ := s.mail.GetDKIMPublicKey(name)
+			s.dns.CreateMailRecords(dnsZone.ID, name, serverIP, dkimRecord)
+			slog.Info("Auto-created mail domain with DNS records", "domain", name, "mail_domain_id", mailDomain.ID)
+		}
+	}
+
+	// 19. Return created domain
 	domain, err := scanDomain(s.db.QueryRow(
 		"SELECT "+domainSelectColumns+" FROM domains WHERE id = ?", id,
 	))
@@ -277,6 +304,18 @@ func (s *DomainService) DeleteDomain(id int) (*model.Domain, error) {
 		} else {
 			slog.Info("Auto-deleted database", "domain", domain.Name, "db", dbName)
 		}
+	}
+
+	// 3b. Remove DNS zone + zone file
+	if dnsZone, err := s.dns.GetZoneByDomain(id); err == nil {
+		s.dns.DeleteZone(dnsZone.ID)
+		slog.Info("Auto-deleted DNS zone", "domain", domain.Name)
+	}
+
+	// 3c. Remove mail domain + DKIM keys
+	if mailDomain, err := s.mail.GetMailDomainByName(domain.Name); err == nil {
+		s.mail.DeleteMailDomain(mailDomain.ID)
+		slog.Info("Auto-deleted mail domain", "domain", domain.Name)
 	}
 
 	// 4. Remove Nginx config

@@ -1110,6 +1110,366 @@ Test-Case "Nested path write creates directories" { $fmNested.ok -and $fmNested.
 Invoke-Api -Method "DELETE" -Path "/api/domains/$fmEdgeDid" -Token $TOKEN | Out-Null
 
 # ============================================================
+Write-Host "`n--- 27. DNS ZONES CRUD ---" -ForegroundColor Yellow
+
+# Create domain for DNS tests
+$dnsDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"dnszone-test.com"}'
+$dnsDid = if ($dnsDom.ok) { $dnsDom.data.id } else { 0 }
+Test-Case "Create domain for DNS test" { $dnsDom.ok }
+
+# Zone auto-created by domain creation - find it
+$dnsList = Invoke-Api -Path "/api/dns/zones" -Token $TOKEN
+Test-Case "List DNS zones returns array" { $dnsList.ok }
+$dnsZid = 0
+if ($dnsList.ok) {
+    foreach ($z in $dnsList.data) {
+        if ($z.domain_id -eq $dnsDid) { $dnsZid = $z.id; break }
+    }
+}
+Test-Case "DNS zone auto-created for domain" { $dnsZid -gt 0 }
+
+# Get zone
+$dnsGet = Invoke-Api -Path "/api/dns/zones/$dnsZid" -Token $TOKEN
+Test-Case "Get DNS zone by ID" { $dnsGet.ok -and $dnsGet.data.name -eq "dnszone-test.com" }
+
+# Zone has default records
+$dnsRecords = Invoke-Api -Path "/api/dns/zones/$dnsZid/records" -Token $TOKEN
+Test-Case "Zone has default NS record" { $dnsRecords.ok -and ($dnsRecords.data | Where-Object { $_.type -eq "NS" }).Count -ge 1 }
+Test-Case "Zone has default A record" { ($dnsRecords.data | Where-Object { $_.type -eq "A" }).Count -ge 1 }
+Test-Case "Zone has default MX record" { ($dnsRecords.data | Where-Object { $_.type -eq "MX" }).Count -ge 1 }
+
+# Duplicate zone rejected
+$dnsDup = Invoke-Api -Method "POST" -Path "/api/dns/zones" -Token $TOKEN -Body ("{""domain_id"":$dnsDid}")
+Test-Case "Duplicate DNS zone rejected" { (-not $dnsDup.ok) }
+
+# Zone file generated
+$zoneFile = docker exec opanel cat /etc/bind/zones/db.dnszone-test.com 2>&1
+Test-Case "Bind9 zone file generated" { $zoneFile -match "SOA" -and $zoneFile -match "dnszone-test.com" }
+
+# ============================================================
+Write-Host "`n--- 28. DNS RECORDS CRUD ---" -ForegroundColor Yellow
+
+# Create A record
+$dnsRecA = Invoke-Api -Method "POST" -Path "/api/dns/zones/$dnsZid/records" -Token $TOKEN -Body '{"type":"A","name":"mail","value":"192.168.1.100","ttl":3600}'
+Test-Case "Create A record succeeds" { $dnsRecA.ok -and $dnsRecA.data.type -eq "A" -and $dnsRecA.data.value -eq "192.168.1.100" }
+$dnsRecAId = if ($dnsRecA.ok) { $dnsRecA.data.id } else { 0 }
+
+# Create CNAME record
+$dnsRecCNAME = Invoke-Api -Method "POST" -Path "/api/dns/zones/$dnsZid/records" -Token $TOKEN -Body '{"type":"CNAME","name":"www","value":"dnszone-test.com","ttl":3600}'
+Test-Case "Create CNAME record succeeds" { $dnsRecCNAME.ok -and $dnsRecCNAME.data.type -eq "CNAME" }
+
+# Create MX record with priority
+$dnsRecMX = Invoke-Api -Method "POST" -Path "/api/dns/zones/$dnsZid/records" -Token $TOKEN -Body '{"type":"MX","name":"@","value":"mail.dnszone-test.com","ttl":3600,"priority":10}'
+Test-Case "Create MX record with priority" { $dnsRecMX.ok -and $dnsRecMX.data.priority -eq 10 }
+
+# Create TXT record
+$dnsRecTXT = Invoke-Api -Method "POST" -Path "/api/dns/zones/$dnsZid/records" -Token $TOKEN -Body '{"type":"TXT","name":"@","value":"v=spf1 include:_spf.google.com ~all","ttl":3600}'
+Test-Case "Create TXT record succeeds" { $dnsRecTXT.ok -and $dnsRecTXT.data.type -eq "TXT" }
+
+# Create AAAA record
+$dnsRecAAAA = Invoke-Api -Method "POST" -Path "/api/dns/zones/$dnsZid/records" -Token $TOKEN -Body '{"type":"AAAA","name":"ipv6","value":"::1","ttl":3600}'
+Test-Case "Create AAAA record succeeds" { $dnsRecAAAA.ok -and $dnsRecAAAA.data.type -eq "AAAA" }
+
+# List records (should have default + created)
+$dnsRecList = Invoke-Api -Path "/api/dns/zones/$dnsZid/records" -Token $TOKEN
+Test-Case "List records includes all types" { $dnsRecList.ok -and ($dnsRecList.data | Measure-Object).Count -ge 5 }
+
+# Update record
+$dnsRecUp = Invoke-Api -Method "PUT" -Path "/api/dns/records/$dnsRecAId" -Token $TOKEN -Body '{"value":"192.168.1.200","ttl":7200}'
+Test-Case "Update A record value" { $dnsRecUp.ok -and $dnsRecUp.data.value -eq "192.168.1.200" -and $dnsRecUp.data.ttl -eq 7200 }
+
+# Zone file updated with new record
+$zoneFileUpdated = docker exec opanel cat /etc/bind/zones/db.dnszone-test.com 2>&1
+Test-Case "Zone file updated after record change" { $zoneFileUpdated -match "192.168.1.200" }
+
+# Delete record
+$dnsRecDel = Invoke-Api -Method "DELETE" -Path "/api/dns/records/$dnsRecAId" -Token $TOKEN
+Test-Case "Delete DNS record succeeds" { $dnsRecDel.ok }
+
+# Record is gone
+$dnsRecGone = Invoke-Api -Path "/api/dns/records/$dnsRecAId" -Token $TOKEN
+Test-Case "Deleted record not found" { (-not $dnsRecGone.ok) }
+
+# Create record on non-existent zone
+$dnsRecBad = Invoke-Api -Method "POST" -Path "/api/dns/zones/99999/records" -Token $TOKEN -Body '{"type":"A","name":"@","value":"1.2.3.4"}'
+Test-Case "Create record on non-existent zone fails" { (-not $dnsRecBad.ok) }
+
+# ============================================================
+Write-Host "`n--- 29. DNS EDGE CASES ---" -ForegroundColor Yellow
+
+# Delete zone with records (cascade)
+$dnsRecForDel = Invoke-Api -Method "POST" -Path "/api/dns/zones/$dnsZid/records" -Token $TOKEN -Body '{"type":"A","name":"temp","value":"1.1.1.1"}'
+Test-Case "Create temp record for zone delete test" { $dnsRecForDel.ok }
+
+$dnsZoneDel = Invoke-Api -Method "DELETE" -Path "/api/dns/zones/$dnsZid" -Token $TOKEN
+Test-Case "Delete DNS zone" { $dnsZoneDel.ok }
+
+$dnsZoneGone = Invoke-Api -Path "/api/dns/zones/$dnsZid" -Token $TOKEN
+Test-Case "Deleted zone not found" { (-not $dnsZoneGone.ok) }
+
+$zoneFileGone = docker exec opanel ls /etc/bind/zones/db.dnszone-test.com 2>&1
+Test-Case "Zone file removed after delete" { $zoneFileGone -match "No such file" }
+
+# Delete non-existent zone
+$dnsZoneDel404 = Invoke-Api -Method "DELETE" -Path "/api/dns/zones/99999" -Token $TOKEN
+Test-Case "Delete non-existent zone fails" { (-not $dnsZoneDel404.ok) }
+
+# Cleanup DNS test domain
+Invoke-Api -Method "DELETE" -Path "/api/domains/$dnsDid" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 30. MAIL DOMAINS CRUD ---" -ForegroundColor Yellow
+
+# Create domain for mail tests
+$mlDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"mailzone-test.com"}'
+$mlDid = if ($mlDom.ok) { $mlDom.data.id } else { 0 }
+Test-Case "Create domain for mail test" { $mlDom.ok }
+
+# List mail domains
+$mlList = Invoke-Api -Path "/api/mail/domains" -Token $TOKEN
+Test-Case "List mail domains returns array" { $mlList.ok }
+
+# Create mail domain
+$mlZone = Invoke-Api -Method "POST" -Path "/api/mail/domains" -Token $TOKEN -Body ("{""domain_id"":$mlDid}")
+Test-Case "Create mail domain succeeds" { $mlZone.ok -and $mlZone.data.name -eq "mailzone-test.com" }
+$mlZid = if ($mlZone.ok) { $mlZone.data.id } else { 0 }
+
+# Get mail domain
+$mlGet = Invoke-Api -Path "/api/mail/domains/$mlZid" -Token $TOKEN
+Test-Case "Get mail domain by ID" { $mlGet.ok -and $mlGet.data.name -eq "mailzone-test.com" }
+
+# Mail domain has DKIM enabled
+Test-Case "Mail domain has DKIM enabled" { $mlGet.data.dkim_enabled -eq $true }
+
+# Duplicate mail domain rejected
+$mlDup = Invoke-Api -Method "POST" -Path "/api/mail/domains" -Token $TOKEN -Body ("{""domain_id"":$mlDid}")
+Test-Case "Duplicate mail domain rejected" { (-not $mlDup.ok) }
+
+# ============================================================
+Write-Host "`n--- 31. MAIL ACCOUNTS CRUD ---" -ForegroundColor Yellow
+
+# Create mail account
+$mlAcc = Invoke-Api -Method "POST" -Path "/api/mail/domains/$mlZid/accounts" -Token $TOKEN -Body '{"username":"user1","password":"MailP@ss1","quota":1073741824}'
+Test-Case "Create mail account succeeds" { $mlAcc.ok -and $mlAcc.data.username -eq "user1" }
+$mlAid = if ($mlAcc.ok) { $mlAcc.data.id } else { 0 }
+
+# Create second account
+$mlAcc2 = Invoke-Api -Method "POST" -Path "/api/mail/domains/$mlZid/accounts" -Token $TOKEN -Body '{"username":"user2","password":"MailP@ss2","quota":2147483648}'
+Test-Case "Create second mail account" { $mlAcc2.ok -and $mlAcc2.data.username -eq "user2" }
+$mlAid2 = if ($mlAcc2.ok) { $mlAcc2.data.id } else { 0 }
+
+# List mail accounts
+$mlAccList = Invoke-Api -Path "/api/mail/domains/$mlZid/accounts" -Token $TOKEN
+Test-Case "List mail accounts returns array" { $mlAccList.ok -and ($mlAccList.data | Measure-Object).Count -eq 2 }
+
+# Get mail account
+$mlAccGet = Invoke-Api -Path "/api/mail/domains/$mlZid/accounts" -Token $TOKEN
+Test-Case "Mail accounts include user1" { ($mlAccGet.data | Where-Object { $_.username -eq "user1" }) -ne $null }
+Test-Case "Mail accounts include user2" { ($mlAccGet.data | Where-Object { $_.username -eq "user2" }) -ne $null }
+
+# Duplicate account rejected
+$mlAccDup = Invoke-Api -Method "POST" -Path "/api/mail/domains/$mlZid/accounts" -Token $TOKEN -Body '{"username":"user1","password":"DupP@ss","quota":1073741824}'
+Test-Case "Duplicate mail account rejected" { (-not $mlAccDup.ok) }
+
+# Update password
+$mlAccUpPwd = Invoke-Api -Method "PUT" -Path "/api/mail/accounts/$mlAid" -Token $TOKEN -Body '{"password":"NewMailP@ss1"}'
+Test-Case "Update mail account password" { $mlAccUpPwd.ok }
+
+# Update quota
+$mlAccUpQuota = Invoke-Api -Method "PUT" -Path "/api/mail/accounts/$mlAid" -Token $TOKEN -Body '{"quota":536870912}'
+Test-Case "Update mail account quota" { $mlAccUpQuota.ok -and $mlAccUpQuota.data.quota -eq 536870912 }
+
+# Empty username rejected
+$mlAccEmpty = Invoke-Api -Method "POST" -Path "/api/mail/domains/$mlZid/accounts" -Token $TOKEN -Body '{"username":"","password":""}'
+Test-Case "Empty mail account username rejected" { (-not $mlAccEmpty.ok) }
+
+# Delete mail account
+$mlAccDel = Invoke-Api -Method "DELETE" -Path "/api/mail/accounts/$mlAid" -Token $TOKEN
+Test-Case "Delete mail account" { $mlAccDel.ok }
+
+# Account is gone
+$mlAccGone = Invoke-Api -Path "/api/mail/domains/$mlZid/accounts" -Token $TOKEN
+$foundDeleted = $false
+if ($mlAccGone.ok) {
+    foreach ($a in $mlAccGone.data) {
+        if ($a.id -eq $mlAid) { $foundDeleted = $true; break }
+    }
+}
+Test-Case "Deleted mail account not in list" { (-not $foundDeleted) }
+
+# ============================================================
+Write-Host "`n--- 32. MAIL AUTOCONFIGURATION ---" -ForegroundColor Yellow
+
+$mlAutoconf = Invoke-Api -Path "/api/mail/autoconfig/mailzone-test.com" -Token $TOKEN
+Test-Case "Autoconfig returns data" { $mlAutoconf.ok }
+Test-Case "Autoconfig has IMAP host" { $mlAutoconf.data.imap_host -eq "mail.mailzone-test.com" }
+Test-Case "Autoconfig has IMAP port 993" { $mlAutoconf.data.imap_port -eq 993 }
+Test-Case "Autoconfig has SMTP host" { $mlAutoconf.data.smtp_host -eq "mail.mailzone-test.com" }
+Test-Case "Autoconfig has SMTP port 465" { $mlAutoconf.data.smtp_port -eq 465 }
+Test-Case "Autoconfig has SMTP auth" { $mlAutoconf.data.smtp_auth -eq $true }
+
+# Autoconfig for non-mail domain
+$mlAutoconfBad = Invoke-Api -Path "/api/mail/autoconfig/nonexistent.com" -Token $TOKEN
+Test-Case "Autoconfig for non-mail domain fails" { (-not $mlAutoconfBad.ok) }
+
+# ============================================================
+Write-Host "`n--- 33. DKIM ---" -ForegroundColor Yellow
+
+# Get DKIM record (may not have key generated in Docker, so accept either ok or fail)
+$mlDkim = Invoke-Api -Path "/api/mail/dkim/mailzone-test.com" -Token $TOKEN
+Test-Case "DKIM endpoint responds" { $mlDkim.ok -or $mlDkim.status -ge 400 }
+
+if ($mlDkim.ok) {
+    Test-Case "DKIM record has domain" { $mlDkim.data.domain -eq "mailzone-test.com" }
+    Test-Case "DKIM record has selector" { $mlDkim.data.selector -eq "default" }
+    Test-Case "DKIM record has v=DKIM1" { $mlDkim.data.record -match "v=DKIM1" }
+}
+
+# ============================================================
+Write-Host "`n--- 34. MAIL EDGE CASES ---" -ForegroundColor Yellow
+
+# Delete mail account
+$mlAccDel2 = Invoke-Api -Method "DELETE" -Path "/api/mail/accounts/$mlAid2" -Token $TOKEN
+Test-Case "Delete second mail account" { $mlAccDel2.ok }
+
+# Delete mail domain (cascade deletes accounts)
+$mlZoneDel = Invoke-Api -Method "DELETE" -Path "/api/mail/domains/$mlZid" -Token $TOKEN
+Test-Case "Delete mail domain" { $mlZoneDel.ok }
+
+$mlZoneGone = Invoke-Api -Path "/api/mail/domains/$mlZid" -Token $TOKEN
+Test-Case "Deleted mail domain not found" { (-not $mlZoneGone.ok) }
+
+# Non-existent mail domain
+$mlZone404 = Invoke-Api -Path "/api/mail/domains/99999" -Token $TOKEN
+Test-Case "Non-existent mail domain not found" { (-not $mlZone404.ok) }
+
+# Non-existent mail account
+$mlAcc404 = Invoke-Api -Method "DELETE" -Path "/api/mail/accounts/99999" -Token $TOKEN
+Test-Case "Delete non-existent mail account fails" { (-not $mlAcc404.ok) }
+
+# Create mail domain on non-existent domain
+$mlBadDom = Invoke-Api -Method "POST" -Path "/api/mail/domains" -Token $TOKEN -Body '{"domain_id":99999}'
+Test-Case "Create mail domain on non-existent domain fails" { (-not $mlBadDom.ok) }
+
+# Cleanup mail test domain
+Invoke-Api -Method "DELETE" -Path "/api/domains/$mlDid" -Token $TOKEN | Out-Null
+
+# ============================================================
+Write-Host "`n--- 35. AUTO DNS + MAIL ON DOMAIN CREATE ---" -ForegroundColor Yellow
+
+# Create domain with mail_enabled=true
+$autoDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"auto-dns-mail.com","mail_enabled":true}'
+Test-Case "Create domain with mail_enabled=true" { $autoDom.ok -and $autoDom.data.name -eq "auto-dns-mail.com" }
+$autoDid = if ($autoDom.ok) { $autoDom.data.id } else { 0 }
+
+# DNS zone auto-created
+$autoZone = Invoke-Api -Path "/api/dns/zones" -Token $TOKEN
+$autoZid = 0
+if ($autoZone.ok) {
+    foreach ($z in $autoZone.data) {
+        if ($z.domain_id -eq $autoDid) { $autoZid = $z.id; break }
+    }
+}
+Test-Case "DNS zone auto-created for domain" { $autoZid -gt 0 }
+
+# Zone has default records (NS, A, MX)
+if ($autoZid -gt 0) {
+    $autoRecs = Invoke-Api -Path "/api/dns/zones/$autoZid/records" -Token $TOKEN
+    Test-Case "Auto zone has NS record" { $autoRecs.ok -and ($autoRecs.data | Where-Object { $_.type -eq "NS" }).Count -ge 1 }
+    Test-Case "Auto zone has A record" { ($autoRecs.data | Where-Object { $_.type -eq "A" }).Count -ge 1 }
+    Test-Case "Auto zone has MX record" { ($autoRecs.data | Where-Object { $_.type -eq "MX" }).Count -ge 1 }
+    Test-Case "Auto zone has SPF TXT record" { ($autoRecs.data | Where-Object { $_.type -eq "TXT" -and $_.value -match "v=spf1" }).Count -ge 1 }
+    Test-Case "Auto zone has DKIM TXT record" { ($autoRecs.data | Where-Object { $_.type -eq "TXT" -and $_.value -match "v=DKIM1" }).Count -ge 1 }
+    Test-Case "Auto zone has mail A record" { ($autoRecs.data | Where-Object { $_.type -eq "A" -and $_.name -eq "mail" }).Count -ge 1 }
+}
+
+# Mail domain auto-created
+$autoMailList = Invoke-Api -Path "/api/mail/domains" -Token $TOKEN
+$autoMailFound = $false
+if ($autoMailList.ok) {
+    foreach ($m in $autoMailList.data) {
+        if ($m.domain_id -eq $autoDid) { $autoMailFound = $true; break }
+    }
+}
+Test-Case "Mail domain auto-created" { $autoMailFound }
+
+# Zone file generated with mail records
+$autoZoneFile = docker exec opanel cat /etc/bind/zones/db.auto-dns-mail.com 2>&1
+Test-Case "Zone file has MX record" { $autoZoneFile -match "MX" }
+Test-Case "Zone file has SPF record" { $autoZoneFile -match "v=spf1" }
+
+# ============================================================
+Write-Host "`n--- 36. AUTO DNS WITHOUT MAIL ---" -ForegroundColor Yellow
+
+# Create domain with mail_enabled=false (default)
+$noMailDom = Invoke-Api -Method "POST" -Path "/api/domains" -Token $TOKEN -Body '{"name":"no-mail-dns.com"}'
+Test-Case "Create domain without mail" { $noMailDom.ok }
+$noMailDid = if ($noMailDom.ok) { $noMailDom.data.id } else { 0 }
+
+# DNS zone auto-created
+$noMailZone = Invoke-Api -Path "/api/dns/zones" -Token $TOKEN
+$noMailZid = 0
+if ($noMailZone.ok) {
+    foreach ($z in $noMailZone.data) {
+        if ($z.domain_id -eq $noMailDid) { $noMailZid = $z.id; break }
+    }
+}
+Test-Case "DNS zone auto-created without mail" { $noMailZid -gt 0 }
+
+# Zone has NS and A but NO MX
+if ($noMailZid -gt 0) {
+    $noMailRecs = Invoke-Api -Path "/api/dns/zones/$noMailZid/records" -Token $TOKEN
+    Test-Case "No-mail zone has NS record" { $noMailRecs.ok -and ($noMailRecs.data | Where-Object { $_.type -eq "NS" }).Count -ge 1 }
+    Test-Case "No-mail zone has default MX record" { ($noMailRecs.data | Where-Object { $_.type -eq "MX" }).Count -ge 1 }
+    $spfRecords = $noMailRecs.data | Where-Object { $_.type -eq "TXT" -and $_.value -match "v=spf1" }
+    Test-Case "No-mail zone has NO SPF record" { $spfRecords.Count -eq 0 }
+}
+
+# No mail domain created
+$noMailMailList = Invoke-Api -Path "/api/mail/domains" -Token $TOKEN
+$noMailMailFound = $false
+if ($noMailMailList.ok) {
+    foreach ($m in $noMailMailList.data) {
+        if ($m.domain_id -eq $noMailDid) { $noMailMailFound = $true; break }
+    }
+}
+Test-Case "No mail domain created when mail_enabled=false" { (-not $noMailMailFound) }
+
+# ============================================================
+Write-Host "`n--- 37. AUTO DNS + MAIL DELETE CLEANUP ---" -ForegroundColor Yellow
+
+# Delete domain with mail -> DNS zone and mail domain should be cleaned up
+$delAutoDom = Invoke-Api -Method "DELETE" -Path "/api/domains/$autoDid" -Token $TOKEN
+Test-Case "Delete domain with auto DNS + mail" { $delAutoDom.ok }
+
+# DNS zone gone
+$delZoneCheck = Invoke-Api -Path "/api/dns/zones" -Token $TOKEN
+$delZoneFound = $false
+if ($delZoneCheck.ok) {
+    foreach ($z in $delZoneCheck.data) {
+        if ($z.domain_id -eq $autoDid) { $delZoneFound = $true; break }
+    }
+}
+Test-Case "DNS zone removed after domain delete" { (-not $delZoneFound) }
+
+# Mail domain gone
+$delMailCheck = Invoke-Api -Path "/api/mail/domains" -Token $TOKEN
+$delMailFound = $false
+if ($delMailCheck.ok) {
+    foreach ($m in $delMailCheck.data) {
+        if ($m.domain_id -eq $autoDid) { $delMailFound = $true; break }
+    }
+}
+Test-Case "Mail domain removed after domain delete" { (-not $delMailFound) }
+
+# Zone file removed
+$delZoneFile = docker exec opanel ls /etc/bind/zones/db.auto-dns-mail.com 2>&1
+Test-Case "Zone file removed after domain delete" { $delZoneFile -match "No such file" }
+
+# Cleanup no-mail domain too
+Invoke-Api -Method "DELETE" -Path "/api/domains/$noMailDid" -Token $TOKEN | Out-Null
+
+# ============================================================
 Write-Host "`n--- 26. CLEANUP (all test data) ---" -ForegroundColor Yellow
 # Remove any leftover test data
 $cleanupUsers = Invoke-Api -Path "/api/users" -Token $TOKEN

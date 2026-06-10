@@ -28,6 +28,7 @@ export interface CreateDomainRequest {
   hosting_type?: 'static' | 'php'
   ssl_enabled?: boolean
   auto_db?: boolean
+  mail_enabled?: boolean
 }
 
 export interface Database {
@@ -108,4 +109,104 @@ export interface WordPressInstall {
   admin_user: string
   status: string
   created_at: string
+}
+
+export interface DNSZone {
+  id: number
+  domain_id: number
+  name: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface DNSRecord {
+  id: number
+  zone_id: number
+  type: string
+  name: string
+  value: string
+  ttl: number
+  priority: number
+  enabled: boolean
+}
+
+export interface CreateDNSZoneRequest {
+  domain_id: number
+}
+
+export interface CreateDNSRecordRequest {
+  type: string
+  name: string
+  value: string
+  ttl?: number
+  priority?: number
+}
+
+export interface UpdateDNSRecordRequest {
+  type?: string
+  name?: string
+  value?: string
+  ttl?: number
+  priority?: number
+  enabled?: boolean
+}
+
+export interface MailDomain {
+  id: number
+  domain_id: number
+  name: string
+  enabled: boolean
+  dkim_enabled: boolean
+  dkim_selector: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MailAccount {
+  id: number
+  domain_id: number
+  username: string
+  password?: string
+  quota: number
+  used: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateMailDomainRequest {
+  domain_id: number
+}
+
+export interface CreateMailAccountRequest {
+  username: string
+  password: string
+  quota?: number
+}
+
+export interface UpdateMailAccountRequest {
+  password?: string
+  quota?: number
+  enabled?: boolean
+}
+
+export interface MailAutoconfig {
+  domain: string
+  imap_host: string
+  imap_port: number
+  imap_ssl: number
+  imap_starttls: number
+  smtp_host: string
+  smtp_port: number
+  smtp_ssl: number
+  smtp_starttls: number
+  smtp_auth: boolean
+  username: string
+}
+
+export interface DKIMRecord {
+  domain: string
+  selector: string
+  record: string
 }

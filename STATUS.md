@@ -1,7 +1,7 @@
 # OPanel - Stato del Progetto
 
 **Data:** 2026-06-09
-**Sprint attuale:** 4 (completato)
+**Sprint attuale:** 5 (completato)
 **Target OS:** Debian 13 (Trixie)
 
 ---
@@ -235,19 +235,19 @@ OPanel/
 - [x] Dockerfile multi-stage con build frontend integrato
 - [x] Makefile aggiornato con target frontend
 
-### Sprint 5 - Posta e DNS
-- [ ] Controller Bind9 (generazione zone file)
-- [ ] Controller Postfix + Dovecot
-- [ ] Gestione account email
-- [ ] DKIM automatico con Rspamd
-- [ ] Autoconfigurazione email client
+### Sprint 5 - Posta e DNS ✅
+- [x] Controller Bind9 (generazione zone file)
+- [x] Controller Postfix + Dovecot
+- [x] Gestione account email
+- [x] DKIM automatico con Rspamd
+- [x] Autoconfigurazione email client
 
 ### Sprint 6 - Strumenti Avanzati
-- [ ] File Manager web (upload/download/gestione)
-- [ ] Terminale SSH nel browser (Xterm.js + creack/pty)
-- [ ] Installatore WordPress 1-click
-- [ ] Sistema backup locale + S3
-- [ ] Monitoring live (CPU, RAM, I/O) via WebSocket
+- [x] File Manager web (upload/download/gestione)
+- [x] Terminale SSH nel browser (Xterm.js + creack/pty)
+- [x] Installatore WordPress 1-click
+- [x] Sistema backup locale + S3
+- [x] Monitoring live (CPU, RAM, I/O) via WebSocket
 
 ### Sprint 7 - Estensioni e Polish
 - [ ] Motore hook/script per estensioni

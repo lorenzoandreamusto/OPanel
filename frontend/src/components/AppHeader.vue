@@ -32,6 +32,7 @@ const pageTitle = computed(() => {
     dashboard: 'Dashboard',
     domains: 'Domains',
     databases: 'Databases',
+    mail: 'Mail',
     users: 'Users',
     settings: 'Settings',
   }
